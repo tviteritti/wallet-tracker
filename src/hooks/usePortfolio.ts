@@ -79,6 +79,22 @@ export function usePortfolio() {
     await refresh()
   }
 
+  const updateMovement = async (id: string, data: MovementFormData) => {
+    const { error: updateError } = await supabase
+      .from('movements')
+      .update({
+        movement_type: data.movement_type,
+        quantity: data.quantity,
+        price_per_unit: data.price_per_unit,
+        fees: data.fees,
+        traded_at: data.traded_at,
+        notes: data.notes.trim() || null,
+      })
+      .eq('id', id)
+    if (updateError) throw updateError
+    await refresh()
+  }
+
   const deleteMovement = async (id: string) => {
     const { error: deleteError } = await supabase.from('movements').delete().eq('id', id)
     if (deleteError) throw deleteError
@@ -95,6 +111,7 @@ export function usePortfolio() {
     updateAsset,
     deleteAsset,
     createMovement,
+    updateMovement,
     deleteMovement,
   }
 }

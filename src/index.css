@@ -160,6 +160,111 @@ h3 {
   font-size: clamp(2rem, 4vw, 2.8rem);
 }
 
+.brand-link {
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.brand-link:hover h1 {
+  color: var(--teal-soft);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.btn.danger-solid {
+  background: var(--danger);
+  color: #fff;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(8, 18, 16, 0.55);
+}
+
+.modal-card {
+  width: min(440px, 100%);
+}
+
+.modal-card h2 {
+  margin-bottom: 0.75rem;
+}
+
+.modal-body {
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+
+.modal-body strong {
+  color: var(--ink);
+}
+
+.allocation-panel {
+  margin-bottom: 1.25rem;
+}
+
+.allocation-panel h2 {
+  margin-bottom: 1rem;
+}
+
+.allocation-chart {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.pie-svg {
+  width: 100%;
+  max-width: 220px;
+  aspect-ratio: 1;
+}
+
+.pie-hole {
+  fill: var(--surface);
+}
+
+.allocation-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.allocation-legend li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+
+.allocation-legend .swatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  margin-top: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.allocation-legend strong,
+.allocation-legend .muted {
+  display: block;
+}
+
 .controls-bar {
   display: flex;
   flex-wrap: wrap;
@@ -366,6 +471,22 @@ textarea {
   color: var(--ink);
 }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2.4rem;
+  background-color: var(--input-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%235f746e' d='M1.4 0.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  background-size: 12px 8px;
+}
+
+[data-theme='dark'] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239bb4ad' d='M1.4 0.6 6 5.2 10.6.6 12 2 6 8 0 2z'/%3E%3C/svg%3E");
+}
+
 .inline-edit input {
   width: auto;
   min-width: 8rem;
@@ -509,7 +630,8 @@ textarea:focus {
 @media (max-width: 720px) {
   .summary-strip,
   .form-grid,
-  .detail-metrics {
+  .detail-metrics,
+  .allocation-chart {
     grid-template-columns: 1fr;
   }
 
@@ -522,7 +644,8 @@ textarea:focus {
   .price-box,
   .movement-list li,
   .movement-meta,
-  .controls-bar {
+  .controls-bar,
+  .detail-actions {
     flex-direction: column;
     align-items: stretch;
   }

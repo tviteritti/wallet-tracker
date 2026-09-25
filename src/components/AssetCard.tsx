@@ -36,6 +36,10 @@ export function AssetCard({ asset, position, selected, onSelect }: AssetCardProp
           <span>{hasPosition ? formatQty(position.quantity) : '—'}</span>
         </div>
         <div>
+          <span className="label">Invertido</span>
+          <span>{hasPosition ? formatMoney(position.costBasis, asset.currency) : '—'}</span>
+        </div>
+        <div>
           <span className="label">P&L</span>
           <span className={hasPosition ? pnlClass(position.unrealizedPnL) : ''}>
             {hasPosition
@@ -51,10 +55,11 @@ export function AssetCard({ asset, position, selected, onSelect }: AssetCardProp
 interface MovementListProps {
   movements: Movement[]
   currency: CurrencyCode
-  onDelete: (id: string) => Promise<void>
+  onEdit: (movement: Movement) => void
+  onDelete: (movement: Movement) => void
 }
 
-export function MovementList({ movements, currency, onDelete }: MovementListProps) {
+export function MovementList({ movements, currency, onEdit, onDelete }: MovementListProps) {
   if (movements.length === 0) {
     return <p className="empty">Todavía no hay compras ni ventas para este activo.</p>
   }
@@ -76,11 +81,10 @@ export function MovementList({ movements, currency, onDelete }: MovementListProp
               {formatQty(Number(movement.quantity))} @{' '}
               {formatMoney(Number(movement.price_per_unit), currency)}
             </span>
-            <button
-              type="button"
-              className="btn ghost danger"
-              onClick={() => void onDelete(movement.id)}
-            >
+            <button type="button" className="btn ghost" onClick={() => onEdit(movement)}>
+              Editar
+            </button>
+            <button type="button" className="btn ghost danger" onClick={() => onDelete(movement)}>
               Eliminar
             </button>
           </div>
