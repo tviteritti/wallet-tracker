@@ -1,4 +1,4 @@
-export type AssetType = 'crypto' | 'stock' | 'cedear' | 'bond' | 'etf' | 'other'
+export type AssetType = 'crypto' | 'stock' | 'cedear' | 'bond' | 'etf' | 'fiat' | 'other'
 export type MovementType = 'buy' | 'sell'
 export type CurrencyCode = 'USD' | 'ARS'
 
@@ -72,5 +72,6 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   cedear: 'CEDEAR',
   bond: 'Bono',
   etf: 'ETF',
+  fiat: 'Fiat',
   other: 'Otro',
 }

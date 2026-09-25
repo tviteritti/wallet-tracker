@@ -14,6 +14,7 @@ const SLICE_COLORS: Record<AssetType, string> = {
   cedear: '#7eb6a6',
   bond: '#c4a35a',
   etf: '#4f7cac',
+  fiat: '#8fa37a',
   other: '#6b7c85',
 }
 

@@ -36,6 +36,10 @@ export function AssetCard({ asset, position, selected, onSelect }: AssetCardProp
           <span>{hasPosition ? formatQty(position.quantity) : '—'}</span>
         </div>
         <div>
+          <span className="label">Valor de mercado</span>
+          <span>{hasPosition ? formatMoney(position.marketValue, asset.currency) : '—'}</span>
+        </div>
+        <div>
           <span className="label">Invertido</span>
           <span>{hasPosition ? formatMoney(position.costBasis, asset.currency) : '—'}</span>
         </div>

@@ -1,6 +1,6 @@
 -- Wallet Tracker schema
 
-create type public.asset_type as enum ('crypto', 'stock', 'cedear', 'bond', 'etf', 'other');
+create type public.asset_type as enum ('crypto', 'stock', 'cedear', 'bond', 'etf', 'fiat', 'other');
 create type public.movement_type as enum ('buy', 'sell');
 
 create table public.assets (

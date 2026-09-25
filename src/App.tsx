@@ -129,10 +129,16 @@ function AuthenticatedApp({
     return map
   }, [assets, movements])
 
+  const filteredAssets = useMemo(
+    () =>
+      typeFilter === 'all' ? assets : assets.filter((asset) => asset.asset_type === typeFilter),
+    [assets, typeFilter],
+  )
+
   const totals = useMemo(() => {
     let marketValue = 0
     let costBasis = 0
-    for (const asset of assets) {
+    for (const asset of filteredAssets) {
       const position = positions.get(asset.id)
       if (!position) continue
       marketValue += convertAmount(
@@ -146,11 +152,11 @@ function AuthenticatedApp({
     const unrealizedPnL = marketValue - costBasis
     const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
     return { marketValue, costBasis, unrealizedPnL, unrealizedPct }
-  }, [assets, positions, displayCurrency, usdArsRate])
+  }, [filteredAssets, positions, displayCurrency, usdArsRate])
 
   const allocation = useMemo(() => {
     const byType = new Map<AssetType, number>()
-    for (const asset of assets) {
+    for (const asset of filteredAssets) {
       const position = positions.get(asset.id)
       if (!position || position.marketValue <= 0) continue
       const value = convertAmount(
@@ -169,13 +175,10 @@ function AuthenticatedApp({
         pct: total > 0 ? (value / total) * 100 : 0,
       }))
       .sort((a, b) => b.value - a.value)
-  }, [assets, positions, displayCurrency, usdArsRate])
+  }, [filteredAssets, positions, displayCurrency, usdArsRate])
 
   const visibleAssets = useMemo(() => {
-    const filtered =
-      typeFilter === 'all' ? assets : assets.filter((asset) => asset.asset_type === typeFilter)
-
-    return [...filtered].sort((a, b) => {
+    return [...filteredAssets].sort((a, b) => {
       if (sortMode === 'name') return a.name.localeCompare(b.name, 'es')
       const investedA = convertAmount(
         positions.get(a.id)?.costBasis ?? 0,
@@ -191,7 +194,7 @@ function AuthenticatedApp({
       )
       return sortMode === 'invested_desc' ? investedB - investedA : investedA - investedB
     })
-  }, [assets, typeFilter, sortMode, positions, displayCurrency, usdArsRate])
+  }, [filteredAssets, sortMode, positions, displayCurrency, usdArsRate])
 
   function goHome() {
     setView('list')
@@ -439,7 +442,7 @@ function AuthenticatedApp({
             </div>
           </section>
 
-          {assets.length > 0 ? (
+          {filteredAssets.length > 0 ? (
             <section className="panel allocation-panel">
               <h2>Composición por tipo</h2>
               <AllocationChart slices={allocation} currency={displayCurrency} />
