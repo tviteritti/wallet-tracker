@@ -468,6 +468,8 @@ function AuthenticatedApp({
                   key={asset.id}
                   asset={asset}
                   position={positions.get(asset.id)!}
+                  displayCurrency={displayCurrency}
+                  usdArsRate={usdArsRate}
                   selected={selectedId === asset.id}
                   onSelect={() => {
                     setSelectedId(asset.id)
