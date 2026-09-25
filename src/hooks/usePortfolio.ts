@@ -37,7 +37,7 @@ export function usePortfolio() {
       name: data.name.trim(),
       symbol: data.symbol.trim().toUpperCase(),
       asset_type: data.asset_type,
-      currency: data.currency.trim().toUpperCase() || 'USD',
+      currency: data.currency,
       current_price: data.current_price,
       notes: data.notes.trim() || null,
     })
@@ -50,7 +50,7 @@ export function usePortfolio() {
     if (data.name !== undefined) payload.name = data.name.trim()
     if (data.symbol !== undefined) payload.symbol = data.symbol.trim().toUpperCase()
     if (data.asset_type !== undefined) payload.asset_type = data.asset_type
-    if (data.currency !== undefined) payload.currency = data.currency.trim().toUpperCase()
+    if (data.currency !== undefined) payload.currency = data.currency
     if (data.current_price !== undefined) payload.current_price = data.current_price
     if (data.notes !== undefined) payload.notes = data.notes.trim() || null
 

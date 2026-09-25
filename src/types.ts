@@ -1,12 +1,13 @@
 export type AssetType = 'crypto' | 'stock' | 'cedear' | 'bond' | 'etf' | 'other'
 export type MovementType = 'buy' | 'sell'
+export type CurrencyCode = 'USD' | 'ARS'
 
 export interface Asset {
   id: string
   name: string
   symbol: string
   asset_type: AssetType
-  currency: string
+  currency: CurrencyCode
   current_price: number
   notes: string | null
   created_at: string
@@ -29,7 +30,7 @@ export interface AssetFormData {
   name: string
   symbol: string
   asset_type: AssetType
-  currency: string
+  currency: CurrencyCode
   current_price: number
   notes: string
 }
@@ -50,6 +51,19 @@ export interface PositionSummary {
   marketValue: number
   unrealizedPnL: number
   unrealizedPct: number
+}
+
+export interface AppSettings {
+  id: number
+  usd_ars_rate: number
+  updated_at: string
+}
+
+export const CURRENCIES: CurrencyCode[] = ['USD', 'ARS']
+
+export const CURRENCY_LABELS: Record<CurrencyCode, string> = {
+  USD: 'USD — Dólar',
+  ARS: 'ARS — Peso argentino',
 }
 
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {

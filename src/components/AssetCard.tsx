@@ -1,4 +1,4 @@
-import type { Asset, Movement, PositionSummary } from '../types'
+import type { Asset, CurrencyCode, Movement, PositionSummary } from '../types'
 import { ASSET_TYPE_LABELS } from '../types'
 import { formatMoney, formatPct, formatQty, pnlClass } from '../lib/portfolio'
 
@@ -23,7 +23,7 @@ export function AssetCard({ asset, position, selected, onSelect }: AssetCardProp
           <strong>{asset.symbol}</strong>
           <span className="muted">{asset.name}</span>
         </div>
-        <span className="chip">{ASSET_TYPE_LABELS[asset.asset_type]}</span>
+        <span className="chip">{ASSET_TYPE_LABELS[asset.asset_type]} · {asset.currency}</span>
       </div>
 
       <div className="asset-card-metrics">
@@ -50,7 +50,7 @@ export function AssetCard({ asset, position, selected, onSelect }: AssetCardProp
 
 interface MovementListProps {
   movements: Movement[]
-  currency: string
+  currency: CurrencyCode
   onDelete: (id: string) => Promise<void>
 }
 

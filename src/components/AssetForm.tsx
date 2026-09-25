@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react'
-import type { AssetFormData, AssetType } from '../types'
-import { ASSET_TYPE_LABELS } from '../types'
+import type { AssetFormData, AssetType, CurrencyCode } from '../types'
+import { ASSET_TYPE_LABELS, CURRENCIES, CURRENCY_LABELS } from '../types'
 
 interface AssetFormProps {
   initial?: Partial<AssetFormData>
@@ -28,7 +28,7 @@ export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFor
       name: String(form.get('name') ?? ''),
       symbol: String(form.get('symbol') ?? ''),
       asset_type: String(form.get('asset_type') ?? 'other') as AssetType,
-      currency: String(form.get('currency') ?? 'USD'),
+      currency: String(form.get('currency') ?? 'USD') as CurrencyCode,
       current_price: Number(form.get('current_price') ?? 0),
       notes: String(form.get('notes') ?? ''),
     })
@@ -57,7 +57,13 @@ export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFor
         </label>
         <label>
           Moneda
-          <input name="currency" required defaultValue={values.currency} placeholder="USD" />
+          <select name="currency" defaultValue={values.currency}>
+            {CURRENCIES.map((currency) => (
+              <option key={currency} value={currency}>
+                {CURRENCY_LABELS[currency]}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="span-2">
           Precio actual (manual)

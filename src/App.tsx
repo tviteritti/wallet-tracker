@@ -5,12 +5,23 @@ import { LoginForm } from './components/LoginForm'
 import { MovementForm } from './components/MovementForm'
 import { useAuth } from './hooks/useAuth'
 import { usePortfolio } from './hooks/usePortfolio'
-import { computePosition, formatMoney, formatPct, formatQty, pnlClass } from './lib/portfolio'
-import type { AssetFormData, MovementFormData } from './types'
+import { useSettings } from './hooks/useSettings'
+import { useTheme } from './hooks/useTheme'
+import {
+  computePosition,
+  convertAmount,
+  formatMoney,
+  formatPct,
+  formatQty,
+  pnlClass,
+} from './lib/portfolio'
+import type { AssetFormData, CurrencyCode, MovementFormData } from './types'
+import { CURRENCIES } from './types'
 
 type View = 'list' | 'create' | 'detail'
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme()
   const { session, loading: authLoading, signIn, signOut } = useAuth()
 
   if (authLoading) {
@@ -22,18 +33,41 @@ export default function App() {
   }
 
   if (!session) {
-    return <LoginForm onSubmit={signIn} />
+    return (
+      <>
+        <button
+          type="button"
+          className="btn ghost theme-toggle floating"
+          onClick={toggleTheme}
+          aria-label="Cambiar tema"
+        >
+          {theme === 'light' ? 'Modo noche' : 'Modo día'}
+        </button>
+        <LoginForm onSubmit={signIn} />
+      </>
+    )
   }
 
-  return <AuthenticatedApp email={session.user.email ?? ''} onSignOut={signOut} />
+  return (
+    <AuthenticatedApp
+      email={session.user.email ?? ''}
+      onSignOut={signOut}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+    />
+  )
 }
 
 function AuthenticatedApp({
   email,
   onSignOut,
+  theme,
+  onToggleTheme,
 }: {
   email: string
   onSignOut: () => Promise<void>
+  theme: 'light' | 'dark'
+  onToggleTheme: () => void
 }) {
   const {
     assets,
@@ -47,12 +81,21 @@ function AuthenticatedApp({
     deleteMovement,
   } = usePortfolio()
 
+  const {
+    usdArsRate,
+    error: settingsError,
+    updateUsdArsRate,
+  } = useSettings()
+
   const [view, setView] = useState<View>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [displayCurrency, setDisplayCurrency] = useState<CurrencyCode>('USD')
+  const [editingRate, setEditingRate] = useState(false)
+  const [rateDraft, setRateDraft] = useState('')
 
   const selected = assets.find((asset) => asset.id === selectedId) ?? null
   const assetMovements = useMemo(
@@ -75,13 +118,18 @@ function AuthenticatedApp({
     for (const asset of assets) {
       const position = positions.get(asset.id)
       if (!position) continue
-      marketValue += position.marketValue
-      costBasis += position.costBasis
+      marketValue += convertAmount(
+        position.marketValue,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
+      costBasis += convertAmount(position.costBasis, asset.currency, displayCurrency, usdArsRate)
     }
     const unrealizedPnL = marketValue - costBasis
     const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
     return { marketValue, costBasis, unrealizedPnL, unrealizedPct }
-  }, [assets, positions])
+  }, [assets, positions, displayCurrency, usdArsRate])
 
   async function handleCreateAsset(data: AssetFormData) {
     setBusy(true)
@@ -105,6 +153,19 @@ function AuthenticatedApp({
       setEditingPrice(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'No se pudo actualizar el precio')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSaveRate() {
+    setBusy(true)
+    setFormError(null)
+    try {
+      await updateUsdArsRate(Number(rateDraft))
+      setEditingRate(false)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'No se pudo guardar el tipo de cambio')
     } finally {
       setBusy(false)
     }
@@ -147,6 +208,9 @@ function AuthenticatedApp({
           <p className="muted session-email">{email}</p>
         </div>
         <div className="topbar-actions">
+          <button type="button" className="btn ghost" onClick={onToggleTheme}>
+            {theme === 'light' ? 'Modo noche' : 'Modo día'}
+          </button>
           {view === 'list' ? (
             <button type="button" className="btn primary" onClick={() => setView('create')}>
               Nuevo activo
@@ -171,23 +235,84 @@ function AuthenticatedApp({
       </header>
 
       {error ? <div className="banner error">{error}</div> : null}
+      {settingsError ? <div className="banner error">{settingsError}</div> : null}
       {formError ? <div className="banner error">{formError}</div> : null}
 
       {view === 'list' ? (
         <>
+          <section className="controls-bar">
+            <label className="control-field">
+              Ver totales en
+              <select
+                value={displayCurrency}
+                onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
+              >
+                {CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="control-field rate-field">
+              <span>1 USD =</span>
+              {editingRate ? (
+                <div className="inline-edit">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={rateDraft}
+                    onChange={(e) => setRateDraft(e.target.value)}
+                    aria-label="Tipo de cambio USD a ARS"
+                  />
+                  <span>ARS</span>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={busy}
+                    onClick={() => void handleSaveRate()}
+                  >
+                    Guardar
+                  </button>
+                  <button type="button" className="btn ghost" onClick={() => setEditingRate(false)}>
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <strong>
+                    {formatQty(usdArsRate)} ARS
+                  </strong>
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => {
+                      setRateDraft(String(usdArsRate))
+                      setEditingRate(true)
+                    }}
+                  >
+                    Actualizar TC
+                  </button>
+                </>
+              )}
+            </div>
+          </section>
+
           <section className="summary-strip">
             <div>
               <span className="label">Valor de mercado</span>
-              <strong>{formatMoney(totals.marketValue)}</strong>
+              <strong>{formatMoney(totals.marketValue, displayCurrency)}</strong>
             </div>
             <div>
               <span className="label">Costo</span>
-              <strong>{formatMoney(totals.costBasis)}</strong>
+              <strong>{formatMoney(totals.costBasis, displayCurrency)}</strong>
             </div>
             <div>
               <span className="label">P&L no realizado</span>
               <strong className={pnlClass(totals.unrealizedPnL)}>
-                {formatMoney(totals.unrealizedPnL)} ({formatPct(totals.unrealizedPct)})
+                {formatMoney(totals.unrealizedPnL, displayCurrency)} ({formatPct(totals.unrealizedPct)})
               </strong>
             </div>
           </section>
@@ -246,7 +371,7 @@ function AuthenticatedApp({
                   {selected.symbol} <span className="muted">· {selected.name}</span>
                 </h2>
                 <p className="muted">
-                  Precio de compra promedio:{' '}
+                  Moneda: {selected.currency} · Precio de compra promedio:{' '}
                   {selectedPosition.quantity > 0
                     ? formatMoney(selectedPosition.avgCost, selected.currency)
                     : '—'}

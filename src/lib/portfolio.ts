@@ -1,4 +1,4 @@
-import type { Movement, PositionSummary } from '../types'
+import type { CurrencyCode, Movement, PositionSummary } from '../types'
 
 export function computePosition(
   movements: Movement[],
@@ -43,12 +43,25 @@ export function computePosition(
   }
 }
 
-export function formatMoney(value: number, currency = 'USD'): string {
+/** Convierte un monto desde `from` hacia `to` usando 1 USD = usdArsRate ARS */
+export function convertAmount(
+  amount: number,
+  from: CurrencyCode,
+  to: CurrencyCode,
+  usdArsRate: number,
+): number {
+  if (from === to) return amount
+  if (usdArsRate <= 0) return amount
+  if (from === 'USD' && to === 'ARS') return amount * usdArsRate
+  return amount / usdArsRate
+}
+
+export function formatMoney(value: number, currency: CurrencyCode = 'USD'): string {
   try {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency,
-      maximumFractionDigits: value >= 100 ? 2 : 6,
+      maximumFractionDigits: Math.abs(value) >= 100 ? 2 : 6,
     }).format(value)
   } catch {
     return `${value.toFixed(2)} ${currency}`
