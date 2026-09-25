@@ -13,6 +13,11 @@ export function formatRateDate(rateDate: string): string {
   return new Date(year, month - 1, day).toLocaleDateString('es-AR')
 }
 
+export function pctOf(part: number, base: number): number {
+  if (base === 0) return 0
+  return (part / base) * 100
+}
+
 export function computePosition(
   movements: Movement[],
   currentPrice: number,
@@ -31,6 +36,8 @@ export function computePosition(
   let costBasisUsd = 0
   let realizedPnL = 0
   let realizedPnLUsd = 0
+  let realizedCostBasis = 0
+  let realizedCostBasisUsd = 0
   const missingFxDates = new Set<string>()
   let usdTrackComplete = true
 
@@ -67,19 +74,25 @@ export function computePosition(
     const avgCostUsd = quantity > 0 ? costBasisUsd / quantity : 0
     const proceeds = sellQty * price - fees
     const proceedsUsd = toUsd(proceeds, rateDate)
+    const soldCost = avgCost * sellQty
+    const soldCostUsd = avgCostUsd * sellQty
 
-    realizedPnL += proceeds - avgCost * sellQty
+    realizedPnL += proceeds - soldCost
+    realizedCostBasis += soldCost
     if (proceedsUsd == null) usdTrackComplete = false
-    else realizedPnLUsd += proceedsUsd - avgCostUsd * sellQty
+    else {
+      realizedPnLUsd += proceedsUsd - soldCostUsd
+      realizedCostBasisUsd += soldCostUsd
+    }
 
-    costBasis -= avgCost * sellQty
-    costBasisUsd -= avgCostUsd * sellQty
+    costBasis -= soldCost
+    costBasisUsd -= soldCostUsd
     quantity -= sellQty
   }
 
   const marketValue = quantity * currentPrice
   const unrealizedPnL = marketValue - costBasis
-  const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
+  const unrealizedPct = pctOf(unrealizedPnL, costBasis)
   const totalPnL = unrealizedPnL + realizedPnL
   const avgCost = quantity > 0 ? costBasis / quantity : 0
 
@@ -88,18 +101,21 @@ export function computePosition(
   let totalPnLUsd: number | null = null
   let costBasisUsdOut: number | null = null
   let realizedPnLUsdOut: number | null = null
+  let realizedCostBasisUsdOut: number | null = null
 
   if (assetCurrency === 'USD') {
     marketValueUsd = marketValue
     costBasisUsdOut = costBasisUsd
     unrealizedPnLUsd = unrealizedPnL
     realizedPnLUsdOut = realizedPnLUsd
+    realizedCostBasisUsdOut = realizedCostBasisUsd
     totalPnLUsd = totalPnL
   } else if (usdTrackComplete && currentUsdArsRate > 0) {
     marketValueUsd = marketValue / currentUsdArsRate
     costBasisUsdOut = costBasisUsd
     unrealizedPnLUsd = marketValueUsd - costBasisUsd
     realizedPnLUsdOut = realizedPnLUsd
+    realizedCostBasisUsdOut = realizedCostBasisUsd
     totalPnLUsd = (unrealizedPnLUsd ?? 0) + realizedPnLUsd
   }
 
@@ -111,11 +127,13 @@ export function computePosition(
     unrealizedPnL,
     unrealizedPct,
     realizedPnL,
+    realizedCostBasis,
     totalPnL,
     costBasisUsd: costBasisUsdOut,
     marketValueUsd,
     unrealizedPnLUsd,
     realizedPnLUsd: realizedPnLUsdOut,
+    realizedCostBasisUsd: realizedCostBasisUsdOut,
     totalPnLUsd,
     missingFxDates: [...missingFxDates].sort(),
   }

@@ -1,26 +1,21 @@
-import { ASSET_TYPE_LABELS, type AssetType } from '../types'
 import { formatMoney, formatPct } from '../lib/portfolio'
 import type { CurrencyCode } from '../types'
 
-export interface AllocationSlice {
-  type: AssetType
+export interface ChartSlice {
+  id: string
+  label: string
   value: number
   pct: number
-}
-
-const SLICE_COLORS: Record<AssetType, string> = {
-  crypto: '#1f6b63',
-  stock: '#3aa691',
-  cedear: '#7eb6a6',
-  bond: '#c4a35a',
-  etf: '#4f7cac',
-  fiat: '#8fa37a',
-  other: '#6b7c85',
+  color: string
 }
 
 interface AllocationChartProps {
-  slices: AllocationSlice[]
+  slices: ChartSlice[]
   currency: CurrencyCode
+  title?: string
+  onSliceClick?: (id: string) => void
+  onBack?: () => void
+  backLabel?: string
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -38,7 +33,14 @@ function describeSlice(cx: number, cy: number, r: number, startAngle: number, en
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y} Z`
 }
 
-export function AllocationChart({ slices, currency }: AllocationChartProps) {
+export function AllocationChart({
+  slices,
+  currency,
+  title,
+  onSliceClick,
+  onBack,
+  backLabel = 'Volver a tipos',
+}: AllocationChartProps) {
   const visible = slices.filter((slice) => slice.value > 0)
 
   if (visible.length === 0) {
@@ -54,31 +56,62 @@ export function AllocationChart({ slices, currency }: AllocationChartProps) {
     return {
       ...slice,
       d: describeSlice(100, 100, 80, start, end),
-      color: SLICE_COLORS[slice.type],
     }
   })
 
   return (
-    <div className="allocation-chart">
-      <svg viewBox="0 0 200 200" className="pie-svg" aria-label="Composición por tipo">
-        {paths.map((slice) => (
-          <path key={slice.type} d={slice.d} fill={slice.color} />
-        ))}
-        <circle cx="100" cy="100" r="42" className="pie-hole" />
-      </svg>
-      <ul className="allocation-legend">
-        {visible.map((slice) => (
-          <li key={slice.type}>
-            <span className="swatch" style={{ background: SLICE_COLORS[slice.type] }} />
-            <div>
-              <strong>{ASSET_TYPE_LABELS[slice.type]}</strong>
-              <span className="muted">
-                {formatMoney(slice.value, currency)} · {formatPct(slice.pct)}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
+    <div className="allocation-wrap">
+      {title || onBack ? (
+        <div className="allocation-toolbar">
+          {onBack ? (
+            <button type="button" className="btn ghost" onClick={onBack}>
+              {backLabel}
+            </button>
+          ) : (
+            <span />
+          )}
+          {title ? <h3>{title}</h3> : <span />}
+        </div>
+      ) : null}
+
+      <div className="allocation-chart">
+        <svg viewBox="0 0 200 200" className="pie-svg" aria-label={title ?? 'Composición'}>
+          {paths.map((slice) => (
+            <path
+              key={slice.id}
+              d={slice.d}
+              fill={slice.color}
+              className={onSliceClick ? 'pie-slice interactive' : 'pie-slice'}
+              onClick={() => onSliceClick?.(slice.id)}
+            >
+              <title>
+                {slice.label}: {formatMoney(slice.value, currency)} ({formatPct(slice.pct)})
+              </title>
+            </path>
+          ))}
+          <circle cx="100" cy="100" r="42" className="pie-hole" />
+        </svg>
+        <ul className="allocation-legend">
+          {visible.map((slice) => (
+            <li key={slice.id}>
+              <button
+                type="button"
+                className={`legend-item ${onSliceClick ? 'interactive' : ''}`}
+                onClick={() => onSliceClick?.(slice.id)}
+                disabled={!onSliceClick}
+              >
+                <span className="swatch" style={{ background: slice.color }} />
+                <div>
+                  <strong>{slice.label}</strong>
+                  <span className="muted">
+                    {formatMoney(slice.value, currency)} · {formatPct(slice.pct)}
+                  </span>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

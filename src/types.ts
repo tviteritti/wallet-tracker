@@ -52,12 +52,14 @@ export interface PositionSummary {
   unrealizedPnL: number
   unrealizedPct: number
   realizedPnL: number
+  realizedCostBasis: number
   totalPnL: number
   /** Costo remanente valuado en USD con TC histórico por día (null si faltan TC) */
   costBasisUsd: number | null
   marketValueUsd: number | null
   unrealizedPnLUsd: number | null
   realizedPnLUsd: number | null
+  realizedCostBasisUsd: number | null
   totalPnLUsd: number | null
   missingFxDates: string[]
 }

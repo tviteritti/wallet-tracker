@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AllocationChart } from './components/AllocationChart'
+import { AllocationChart, type ChartSlice } from './components/AllocationChart'
 import { AssetCard, MovementList } from './components/AssetCard'
 import { AssetForm } from './components/AssetForm'
 import { FxRatesPanel } from './components/FxRatesPanel'
@@ -17,6 +17,7 @@ import {
   formatMoney,
   formatPct,
   formatQty,
+  pctOf,
   pnlClass,
 } from './lib/portfolio'
 import type {
@@ -122,6 +123,19 @@ function AuthenticatedApp({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [sortMode, setSortMode] = useState<SortMode>('invested_desc')
   const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [chartFocus, setChartFocus] = useState<AssetType | null>(null)
+
+  const TYPE_COLORS: Record<AssetType, string> = {
+    crypto: '#1f6b63',
+    stock: '#3aa691',
+    cedear: '#7eb6a6',
+    bond: '#c4a35a',
+    etf: '#4f7cac',
+    fiat: '#8fa37a',
+    other: '#6b7c85',
+  }
+
+  const ASSET_SLICE_COLORS = ['#1f6b63', '#3aa691', '#7eb6a6', '#c4a35a', '#4f7cac', '#8fa37a', '#6b7c85', '#a8c5ae']
 
   const selected = assets.find((asset) => asset.id === selectedId) ?? null
   const assetMovements = useMemo(
@@ -158,6 +172,7 @@ function AuthenticatedApp({
     let costBasis = 0
     let unrealizedPnL = 0
     let realizedPnL = 0
+    let realizedCost = 0
     let totalPnL = 0
     let missingFx = 0
 
@@ -193,6 +208,13 @@ function AuthenticatedApp({
         displayCurrency,
         usdArsRate,
       )
+      realizedCost += displayAmount(
+        position.realizedCostBasis,
+        position.realizedCostBasisUsd,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
       totalPnL += displayAmount(
         position.totalPnL,
         position.totalPnLUsd,
@@ -202,8 +224,17 @@ function AuthenticatedApp({
       )
     }
 
-    const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
-    return { marketValue, costBasis, unrealizedPnL, unrealizedPct, realizedPnL, totalPnL, missingFx }
+    return {
+      marketValue,
+      costBasis,
+      unrealizedPnL,
+      unrealizedPct: pctOf(unrealizedPnL, costBasis),
+      realizedPnL,
+      realizedPct: pctOf(realizedPnL, realizedCost),
+      totalPnL,
+      totalPct: pctOf(totalPnL, costBasis + realizedCost),
+      missingFx,
+    }
   }, [filteredAssets, positions, displayCurrency, usdArsRate])
 
   const allocation = useMemo(() => {
@@ -229,6 +260,44 @@ function AuthenticatedApp({
       }))
       .sort((a, b) => b.value - a.value)
   }, [filteredAssets, positions, displayCurrency, usdArsRate])
+
+  const chartSlices: ChartSlice[] = useMemo(() => {
+    if (!chartFocus) {
+      return allocation.map((slice) => ({
+        id: slice.type,
+        label: ASSET_TYPE_LABELS[slice.type],
+        value: slice.value,
+        pct: slice.pct,
+        color: TYPE_COLORS[slice.type],
+      }))
+    }
+
+    const focused = filteredAssets.filter((asset) => asset.asset_type === chartFocus)
+    const values = focused.map((asset) => {
+      const position = positions.get(asset.id)
+      const value = position
+        ? displayAmount(
+            position.marketValue,
+            position.marketValueUsd,
+            asset.currency,
+            displayCurrency,
+            usdArsRate,
+          )
+        : 0
+      return { asset, value }
+    })
+    const total = values.reduce((sum, item) => sum + Math.max(item.value, 0), 0)
+    return values
+      .filter((item) => item.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .map((item, index) => ({
+        id: item.asset.id,
+        label: `${item.asset.symbol} · ${item.asset.name}`,
+        value: item.value,
+        pct: total > 0 ? (item.value / total) * 100 : 0,
+        color: ASSET_SLICE_COLORS[index % ASSET_SLICE_COLORS.length],
+      }))
+  }, [allocation, chartFocus, filteredAssets, positions, displayCurrency, usdArsRate])
 
   const visibleAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => {
@@ -258,6 +327,7 @@ function AuthenticatedApp({
     setEditingPrice(false)
     setEditingMovement(null)
     setFormError(null)
+    setChartFocus(null)
   }
 
   async function handleCreateAsset(data: AssetFormData) {
@@ -534,13 +604,13 @@ function AuthenticatedApp({
             <div>
               <span className="label">P&L realizado</span>
               <strong className={pnlClass(totals.realizedPnL)}>
-                {formatMoney(totals.realizedPnL, displayCurrency)}
+                {formatMoney(totals.realizedPnL, displayCurrency)} ({formatPct(totals.realizedPct)})
               </strong>
             </div>
             <div>
               <span className="label">P&L total</span>
               <strong className={pnlClass(totals.totalPnL)}>
-                {formatMoney(totals.totalPnL, displayCurrency)}
+                {formatMoney(totals.totalPnL, displayCurrency)} ({formatPct(totals.totalPct)})
               </strong>
             </div>
           </section>
@@ -557,8 +627,29 @@ function AuthenticatedApp({
 
           {filteredAssets.length > 0 ? (
             <section className="panel allocation-panel">
-              <h2>Composición por tipo</h2>
-              <AllocationChart slices={allocation} currency={displayCurrency} />
+              <h2>Composición {chartFocus ? `· ${ASSET_TYPE_LABELS[chartFocus]}` : 'por tipo'}</h2>
+              <p className="muted chart-hint">
+                {chartFocus
+                  ? 'Distribución de activos de este tipo. Tocá uno para abrir el detalle.'
+                  : 'Tocá un tipo para ver cómo se reparte entre tus activos.'}
+              </p>
+              <AllocationChart
+                slices={chartSlices}
+                currency={displayCurrency}
+                onBack={chartFocus ? () => setChartFocus(null) : undefined}
+                onSliceClick={(id) => {
+                  if (!chartFocus) {
+                    setChartFocus(id as AssetType)
+                    return
+                  }
+                  setSelectedId(id)
+                  setView('detail')
+                  setEditingAsset(false)
+                  setEditingPrice(false)
+                  setEditingMovement(null)
+                  setFormError(null)
+                }}
+              />
             </section>
           ) : null}
 
@@ -615,6 +706,30 @@ function AuthenticatedApp({
 
       {view === 'detail' && selected && selectedPosition ? (
         <section className="detail-layout">
+          <section className="controls-bar">
+            <label className="control-field">
+              Ver en
+              <select
+                value={displayCurrency}
+                onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
+              >
+                {CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selected.currency === 'ARS' && selectedPosition.missingFxDates.length > 0 ? (
+              <p className="muted">
+                Faltan TC diarios — el P&amp;L en USD puede ser aproximado.{' '}
+                <button type="button" className="linkish" onClick={() => setView('fx')}>
+                  Cargar TC
+                </button>
+              </p>
+            ) : null}
+          </section>
+
           <div className="panel">
             <div className="detail-header">
               <div>
@@ -622,9 +737,24 @@ function AuthenticatedApp({
                   {selected.symbol} <span className="muted">· {selected.name}</span>
                 </h2>
                 <p className="muted">
-                  {ASSET_TYPE_LABELS[selected.asset_type]} · {selected.currency} · Precio promedio:{' '}
+                  {ASSET_TYPE_LABELS[selected.asset_type]} · nativo {selected.currency} · Precio
+                  promedio:{' '}
                   {selectedPosition.quantity > 0
-                    ? formatMoney(selectedPosition.avgCost, selected.currency)
+                    ? formatMoney(
+                        displayAmount(
+                          selectedPosition.avgCost,
+                          selected.currency === 'USD'
+                            ? selectedPosition.avgCost
+                            : selectedPosition.costBasisUsd != null &&
+                                selectedPosition.quantity > 0
+                              ? selectedPosition.costBasisUsd / selectedPosition.quantity
+                              : null,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                        displayCurrency,
+                      )
                     : '—'}
                 </p>
               </div>
@@ -673,75 +803,142 @@ function AuthenticatedApp({
                   </div>
                   <div>
                     <span className="label">Valor de mercado</span>
-                    <strong>{formatMoney(selectedPosition.marketValue, selected.currency)}</strong>
+                    <strong>
+                      {formatMoney(
+                        displayAmount(
+                          selectedPosition.marketValue,
+                          selectedPosition.marketValueUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                        displayCurrency,
+                      )}
+                    </strong>
                   </div>
                   <div>
                     <span className="label">Costo</span>
-                    <strong>{formatMoney(selectedPosition.costBasis, selected.currency)}</strong>
+                    <strong>
+                      {formatMoney(
+                        displayAmount(
+                          selectedPosition.costBasis,
+                          selectedPosition.costBasisUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                        displayCurrency,
+                      )}
+                    </strong>
                   </div>
                   <div>
                     <span className="label">P&L no realizado</span>
-                    <strong className={pnlClass(selectedPosition.unrealizedPnL)}>
-                      {formatMoney(selectedPosition.unrealizedPnL, selected.currency)} (
-                      {formatPct(selectedPosition.unrealizedPct)})
+                    <strong
+                      className={pnlClass(
+                        displayAmount(
+                          selectedPosition.unrealizedPnL,
+                          selectedPosition.unrealizedPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                      )}
+                    >
+                      {(() => {
+                        const unrealized = displayAmount(
+                          selectedPosition.unrealizedPnL,
+                          selectedPosition.unrealizedPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        const invested = displayAmount(
+                          selectedPosition.costBasis,
+                          selectedPosition.costBasisUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        return `${formatMoney(unrealized, displayCurrency)} (${formatPct(pctOf(unrealized, invested))})`
+                      })()}
                     </strong>
                   </div>
                   <div>
                     <span className="label">P&L realizado</span>
-                    <strong className={pnlClass(selectedPosition.realizedPnL)}>
-                      {formatMoney(selectedPosition.realizedPnL, selected.currency)}
+                    <strong
+                      className={pnlClass(
+                        displayAmount(
+                          selectedPosition.realizedPnL,
+                          selectedPosition.realizedPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                      )}
+                    >
+                      {(() => {
+                        const realized = displayAmount(
+                          selectedPosition.realizedPnL,
+                          selectedPosition.realizedPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        const realizedCost = displayAmount(
+                          selectedPosition.realizedCostBasis,
+                          selectedPosition.realizedCostBasisUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        return `${formatMoney(realized, displayCurrency)} (${formatPct(pctOf(realized, realizedCost))})`
+                      })()}
                     </strong>
                   </div>
                   <div>
                     <span className="label">P&L total</span>
-                    <strong className={pnlClass(selectedPosition.totalPnL)}>
-                      {formatMoney(selectedPosition.totalPnL, selected.currency)}
+                    <strong
+                      className={pnlClass(
+                        displayAmount(
+                          selectedPosition.totalPnL,
+                          selectedPosition.totalPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        ),
+                      )}
+                    >
+                      {(() => {
+                        const total = displayAmount(
+                          selectedPosition.totalPnL,
+                          selectedPosition.totalPnLUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        const invested = displayAmount(
+                          selectedPosition.costBasis,
+                          selectedPosition.costBasisUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        const realizedCost = displayAmount(
+                          selectedPosition.realizedCostBasis,
+                          selectedPosition.realizedCostBasisUsd,
+                          selected.currency,
+                          displayCurrency,
+                          usdArsRate,
+                        )
+                        return `${formatMoney(total, displayCurrency)} (${formatPct(pctOf(total, invested + realizedCost))})`
+                      })()}
                     </strong>
                   </div>
                 </div>
 
-                {selectedPosition.unrealizedPnLUsd != null ? (
-                  <div className="detail-metrics usd-metrics">
-                    <div>
-                      <span className="label">Valor USD</span>
-                      <strong>{formatMoney(selectedPosition.marketValueUsd ?? 0, 'USD')}</strong>
-                    </div>
-                    <div>
-                      <span className="label">Costo USD</span>
-                      <strong>{formatMoney(selectedPosition.costBasisUsd ?? 0, 'USD')}</strong>
-                    </div>
-                    <div>
-                      <span className="label">P&L no realizado USD</span>
-                      <strong className={pnlClass(selectedPosition.unrealizedPnLUsd)}>
-                        {formatMoney(selectedPosition.unrealizedPnLUsd, 'USD')}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="label">P&L realizado USD</span>
-                      <strong className={pnlClass(selectedPosition.realizedPnLUsd ?? 0)}>
-                        {formatMoney(selectedPosition.realizedPnLUsd ?? 0, 'USD')}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="label">P&L total USD</span>
-                      <strong className={pnlClass(selectedPosition.totalPnLUsd ?? 0)}>
-                        {formatMoney(selectedPosition.totalPnLUsd ?? 0, 'USD')}
-                      </strong>
-                    </div>
-                  </div>
-                ) : selected.currency === 'ARS' && selectedPosition.missingFxDates.length > 0 ? (
-                  <div className="banner warn">
-                    Faltan TC diarios para este activo. Cargalos en{' '}
-                    <button type="button" className="linkish" onClick={() => setView('fx')}>
-                      TC diarios
-                    </button>{' '}
-                    para ver P&amp;L en dólares.
-                  </div>
-                ) : null}
-
                 <div className="price-box">
                   <div>
-                    <span className="label">Precio actual (manual)</span>
+                    <span className="label">Precio actual (manual, {selected.currency})</span>
                     {editingPrice ? (
                       <div className="inline-edit">
                         <input

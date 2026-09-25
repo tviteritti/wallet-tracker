@@ -94,7 +94,7 @@ h3 {
 }
 
 .app-shell {
-  width: min(1100px, calc(100% - 2rem));
+  width: min(1320px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1.5rem 0 3rem;
   min-height: 100vh;
@@ -218,24 +218,59 @@ h3 {
 }
 
 .allocation-panel h2 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.chart-hint {
+  margin: 0 0 1rem;
+}
+
+.allocation-wrap {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
+
+.allocation-toolbar {
+  width: min(720px, 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.allocation-toolbar h3 {
+  margin: 0;
+  font-size: 1rem;
 }
 
 .allocation-chart {
+  width: min(720px, 100%);
   display: grid;
-  grid-template-columns: minmax(160px, 220px) 1fr;
-  gap: 1.25rem;
+  grid-template-columns: minmax(180px, 240px) minmax(200px, 1fr);
+  gap: 1.5rem;
   align-items: center;
+  justify-content: center;
 }
 
 .pie-svg {
   width: 100%;
-  max-width: 220px;
+  max-width: 240px;
   aspect-ratio: 1;
+  margin: 0 auto;
 }
 
 .pie-hole {
   fill: var(--surface);
+}
+
+.pie-slice.interactive {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.pie-slice.interactive:hover {
+  opacity: 0.85;
 }
 
 .allocation-legend {
@@ -247,9 +282,32 @@ h3 {
 }
 
 .allocation-legend li {
+  display: block;
+}
+
+.legend-item {
   display: flex;
   gap: 0.7rem;
   align-items: flex-start;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0.35rem 0.45rem;
+  border-radius: 10px;
+}
+
+.legend-item.interactive {
+  cursor: pointer;
+}
+
+.legend-item.interactive:hover {
+  background: var(--bg-accent);
+}
+
+.legend-item:disabled {
+  cursor: default;
 }
 
 .allocation-legend .swatch {
@@ -370,10 +428,16 @@ h3 {
   gap: 0.15rem;
 }
 
-.summary-strip .pnl-positive,
-.summary-strip .pnl-negative,
+.summary-strip .pnl-positive {
+  color: #9dffc8;
+}
+
+.summary-strip .pnl-negative {
+  color: #ffb4b4;
+}
+
 .summary-strip .pnl-flat {
-  color: inherit;
+  color: var(--summary-text);
 }
 
 .summary-strip .label,
@@ -393,8 +457,8 @@ h3 {
 
 .asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.1rem;
 }
 
 .asset-card,
