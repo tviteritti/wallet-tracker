@@ -2,16 +2,18 @@ import { useMemo, useState } from 'react'
 import { AllocationChart } from './components/AllocationChart'
 import { AssetCard, MovementList } from './components/AssetCard'
 import { AssetForm } from './components/AssetForm'
+import { FxRatesPanel } from './components/FxRatesPanel'
 import { LoginForm } from './components/LoginForm'
 import { Modal } from './components/Modal'
 import { MovementForm } from './components/MovementForm'
 import { useAuth } from './hooks/useAuth'
+import { useDailyFxRates } from './hooks/useDailyFxRates'
 import { usePortfolio } from './hooks/usePortfolio'
 import { useSettings } from './hooks/useSettings'
 import { useTheme } from './hooks/useTheme'
 import {
   computePosition,
-  convertAmount,
+  displayAmount,
   formatMoney,
   formatPct,
   formatQty,
@@ -26,7 +28,7 @@ import type {
 } from './types'
 import { ASSET_TYPE_LABELS, CURRENCIES } from './types'
 
-type View = 'list' | 'create' | 'detail'
+type View = 'list' | 'create' | 'detail' | 'fx'
 type TypeFilter = 'all' | AssetType
 type SortMode = 'invested_desc' | 'invested_asc' | 'name'
 
@@ -98,6 +100,13 @@ function AuthenticatedApp({
   } = usePortfolio()
 
   const { usdArsRate, error: settingsError, updateUsdArsRate } = useSettings()
+  const {
+    rates: dailyRates,
+    rateMap,
+    error: fxError,
+    upsertRate,
+    deleteRate,
+  } = useDailyFxRates()
 
   const [view, setView] = useState<View>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -124,10 +133,19 @@ function AuthenticatedApp({
     const map = new Map<string, ReturnType<typeof computePosition>>()
     for (const asset of assets) {
       const assetMoves = movements.filter((m) => m.asset_id === asset.id)
-      map.set(asset.id, computePosition(assetMoves, Number(asset.current_price)))
+      map.set(
+        asset.id,
+        computePosition(
+          assetMoves,
+          Number(asset.current_price),
+          asset.currency,
+          rateMap,
+          usdArsRate,
+        ),
+      )
     }
     return map
-  }, [assets, movements])
+  }, [assets, movements, rateMap, usdArsRate])
 
   const filteredAssets = useMemo(
     () =>
@@ -138,20 +156,54 @@ function AuthenticatedApp({
   const totals = useMemo(() => {
     let marketValue = 0
     let costBasis = 0
+    let unrealizedPnL = 0
+    let realizedPnL = 0
+    let totalPnL = 0
+    let missingFx = 0
+
     for (const asset of filteredAssets) {
       const position = positions.get(asset.id)
       if (!position) continue
-      marketValue += convertAmount(
+      missingFx += position.missingFxDates.length
+      marketValue += displayAmount(
         position.marketValue,
+        position.marketValueUsd,
         asset.currency,
         displayCurrency,
         usdArsRate,
       )
-      costBasis += convertAmount(position.costBasis, asset.currency, displayCurrency, usdArsRate)
+      costBasis += displayAmount(
+        position.costBasis,
+        position.costBasisUsd,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
+      unrealizedPnL += displayAmount(
+        position.unrealizedPnL,
+        position.unrealizedPnLUsd,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
+      realizedPnL += displayAmount(
+        position.realizedPnL,
+        position.realizedPnLUsd,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
+      totalPnL += displayAmount(
+        position.totalPnL,
+        position.totalPnLUsd,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
     }
-    const unrealizedPnL = marketValue - costBasis
+
     const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
-    return { marketValue, costBasis, unrealizedPnL, unrealizedPct }
+    return { marketValue, costBasis, unrealizedPnL, unrealizedPct, realizedPnL, totalPnL, missingFx }
   }, [filteredAssets, positions, displayCurrency, usdArsRate])
 
   const allocation = useMemo(() => {
@@ -159,8 +211,9 @@ function AuthenticatedApp({
     for (const asset of filteredAssets) {
       const position = positions.get(asset.id)
       if (!position || position.marketValue <= 0) continue
-      const value = convertAmount(
+      const value = displayAmount(
         position.marketValue,
+        position.marketValueUsd,
         asset.currency,
         displayCurrency,
         usdArsRate,
@@ -180,14 +233,16 @@ function AuthenticatedApp({
   const visibleAssets = useMemo(() => {
     return [...filteredAssets].sort((a, b) => {
       if (sortMode === 'name') return a.name.localeCompare(b.name, 'es')
-      const investedA = convertAmount(
+      const investedA = displayAmount(
         positions.get(a.id)?.costBasis ?? 0,
+        positions.get(a.id)?.costBasisUsd ?? null,
         a.currency,
         displayCurrency,
         usdArsRate,
       )
-      const investedB = convertAmount(
+      const investedB = displayAmount(
         positions.get(b.id)?.costBasis ?? 0,
+        positions.get(b.id)?.costBasisUsd ?? null,
         b.currency,
         displayCurrency,
         usdArsRate,
@@ -322,6 +377,10 @@ function AuthenticatedApp({
           <button type="button" className="btn ghost" onClick={onToggleTheme}>
             {theme === 'light' ? 'Modo noche' : 'Modo día'}
           </button>
+          <button type="button" className="btn ghost" onClick={() => setView('fx')}>
+            TC diarios
+            {totals.missingFx > 0 ? ` (${totals.missingFx})` : ''}
+          </button>
           {view === 'list' ? (
             <button type="button" className="btn primary" onClick={() => setView('create')}>
               Nuevo activo
@@ -339,7 +398,39 @@ function AuthenticatedApp({
 
       {error ? <div className="banner error">{error}</div> : null}
       {settingsError ? <div className="banner error">{settingsError}</div> : null}
+      {fxError ? <div className="banner error">{fxError}</div> : null}
       {formError ? <div className="banner error">{formError}</div> : null}
+
+      {view === 'fx' ? (
+        <FxRatesPanel
+          assets={assets}
+          movements={movements}
+          rates={dailyRates}
+          busy={busy}
+          onSave={async (rateDate, rate) => {
+            setBusy(true)
+            setFormError(null)
+            try {
+              await upsertRate(rateDate, rate)
+            } catch (err) {
+              setFormError(err instanceof Error ? err.message : 'No se pudo guardar el TC')
+            } finally {
+              setBusy(false)
+            }
+          }}
+          onDelete={async (rateDate) => {
+            setBusy(true)
+            setFormError(null)
+            try {
+              await deleteRate(rateDate)
+            } catch (err) {
+              setFormError(err instanceof Error ? err.message : 'No se pudo eliminar el TC')
+            } finally {
+              setBusy(false)
+            }
+          }}
+        />
+      ) : null}
 
       {view === 'list' ? (
         <>
@@ -425,7 +516,7 @@ function AuthenticatedApp({
             </div>
           </section>
 
-          <section className="summary-strip">
+          <section className="summary-strip summary-strip-wide">
             <div>
               <span className="label">Valor de mercado</span>
               <strong>{formatMoney(totals.marketValue, displayCurrency)}</strong>
@@ -440,7 +531,29 @@ function AuthenticatedApp({
                 {formatMoney(totals.unrealizedPnL, displayCurrency)} ({formatPct(totals.unrealizedPct)})
               </strong>
             </div>
+            <div>
+              <span className="label">P&L realizado</span>
+              <strong className={pnlClass(totals.realizedPnL)}>
+                {formatMoney(totals.realizedPnL, displayCurrency)}
+              </strong>
+            </div>
+            <div>
+              <span className="label">P&L total</span>
+              <strong className={pnlClass(totals.totalPnL)}>
+                {formatMoney(totals.totalPnL, displayCurrency)}
+              </strong>
+            </div>
           </section>
+
+          {totals.missingFx > 0 ? (
+            <div className="banner warn">
+              Hay movimientos en ARS sin tipo de cambio diario. Cargalos en{' '}
+              <button type="button" className="linkish" onClick={() => setView('fx')}>
+                TC diarios
+              </button>{' '}
+              para ver el P&amp;L en USD con historial correcto.
+            </div>
+          ) : null}
 
           {filteredAssets.length > 0 ? (
             <section className="panel allocation-panel">
@@ -567,13 +680,64 @@ function AuthenticatedApp({
                     <strong>{formatMoney(selectedPosition.costBasis, selected.currency)}</strong>
                   </div>
                   <div>
-                    <span className="label">P&L</span>
+                    <span className="label">P&L no realizado</span>
                     <strong className={pnlClass(selectedPosition.unrealizedPnL)}>
                       {formatMoney(selectedPosition.unrealizedPnL, selected.currency)} (
                       {formatPct(selectedPosition.unrealizedPct)})
                     </strong>
                   </div>
+                  <div>
+                    <span className="label">P&L realizado</span>
+                    <strong className={pnlClass(selectedPosition.realizedPnL)}>
+                      {formatMoney(selectedPosition.realizedPnL, selected.currency)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="label">P&L total</span>
+                    <strong className={pnlClass(selectedPosition.totalPnL)}>
+                      {formatMoney(selectedPosition.totalPnL, selected.currency)}
+                    </strong>
+                  </div>
                 </div>
+
+                {selectedPosition.unrealizedPnLUsd != null ? (
+                  <div className="detail-metrics usd-metrics">
+                    <div>
+                      <span className="label">Valor USD</span>
+                      <strong>{formatMoney(selectedPosition.marketValueUsd ?? 0, 'USD')}</strong>
+                    </div>
+                    <div>
+                      <span className="label">Costo USD</span>
+                      <strong>{formatMoney(selectedPosition.costBasisUsd ?? 0, 'USD')}</strong>
+                    </div>
+                    <div>
+                      <span className="label">P&L no realizado USD</span>
+                      <strong className={pnlClass(selectedPosition.unrealizedPnLUsd)}>
+                        {formatMoney(selectedPosition.unrealizedPnLUsd, 'USD')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="label">P&L realizado USD</span>
+                      <strong className={pnlClass(selectedPosition.realizedPnLUsd ?? 0)}>
+                        {formatMoney(selectedPosition.realizedPnLUsd ?? 0, 'USD')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="label">P&L total USD</span>
+                      <strong className={pnlClass(selectedPosition.totalPnLUsd ?? 0)}>
+                        {formatMoney(selectedPosition.totalPnLUsd ?? 0, 'USD')}
+                      </strong>
+                    </div>
+                  </div>
+                ) : selected.currency === 'ARS' && selectedPosition.missingFxDates.length > 0 ? (
+                  <div className="banner warn">
+                    Faltan TC diarios para este activo. Cargalos en{' '}
+                    <button type="button" className="linkish" onClick={() => setView('fx')}>
+                      TC diarios
+                    </button>{' '}
+                    para ver P&amp;L en dólares.
+                  </div>
+                ) : null}
 
                 <div className="price-box">
                   <div>

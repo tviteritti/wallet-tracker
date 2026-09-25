@@ -317,6 +317,59 @@ h3 {
   box-shadow: var(--shadow);
 }
 
+.summary-strip-wide {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.banner.warn {
+  background: color-mix(in srgb, #c4a35a 18%, var(--surface));
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, #c4a35a 40%, var(--line));
+}
+
+.linkish {
+  border: 0;
+  background: transparent;
+  color: var(--teal-soft);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.usd-metrics {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--line);
+}
+
+.fx-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.fx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.fx-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.fx-list li > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .summary-strip .pnl-positive,
 .summary-strip .pnl-negative,
 .summary-strip .pnl-flat {
@@ -629,6 +682,7 @@ textarea:focus {
 
 @media (max-width: 720px) {
   .summary-strip,
+  .summary-strip-wide,
   .form-grid,
   .detail-metrics,
   .allocation-chart {
@@ -645,7 +699,8 @@ textarea:focus {
   .movement-list li,
   .movement-meta,
   .controls-bar,
-  .detail-actions {
+  .detail-actions,
+  .fx-list li {
     flex-direction: column;
     align-items: stretch;
   }

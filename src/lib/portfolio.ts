@@ -1,8 +1,24 @@
 import type { CurrencyCode, Movement, PositionSummary } from '../types'
 
+export function toRateDate(iso: string): string {
+  const date = new Date(iso)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function formatRateDate(rateDate: string): string {
+  const [year, month, day] = rateDate.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('es-AR')
+}
+
 export function computePosition(
   movements: Movement[],
   currentPrice: number,
+  assetCurrency: CurrencyCode,
+  fxByDate: Map<string, number>,
+  currentUsdArsRate: number,
 ): PositionSummary {
   const sorted = [...movements].sort(
     (a, b) =>
@@ -12,26 +28,80 @@ export function computePosition(
 
   let quantity = 0
   let costBasis = 0
+  let costBasisUsd = 0
+  let realizedPnL = 0
+  let realizedPnLUsd = 0
+  const missingFxDates = new Set<string>()
+  let usdTrackComplete = true
+
+  const toUsd = (amountNative: number, rateDate: string): number | null => {
+    if (assetCurrency === 'USD') return amountNative
+    const rate = fxByDate.get(rateDate)
+    if (!rate || rate <= 0) {
+      missingFxDates.add(rateDate)
+      return null
+    }
+    return amountNative / rate
+  }
 
   for (const movement of sorted) {
+    const qty = Number(movement.quantity)
+    const price = Number(movement.price_per_unit)
+    const fees = Number(movement.fees)
+    const rateDate = toRateDate(movement.traded_at)
+
     if (movement.movement_type === 'buy') {
-      costBasis += movement.quantity * movement.price_per_unit + Number(movement.fees)
-      quantity += Number(movement.quantity)
+      const cash = qty * price + fees
+      const cashUsd = toUsd(cash, rateDate)
+      if (cashUsd == null) usdTrackComplete = false
+      else costBasisUsd += cashUsd
+      costBasis += cash
+      quantity += qty
       continue
     }
 
     if (quantity <= 0) continue
 
-    const sellQty = Math.min(Number(movement.quantity), quantity)
+    const sellQty = Math.min(qty, quantity)
     const avgCost = costBasis / quantity
+    const avgCostUsd = quantity > 0 ? costBasisUsd / quantity : 0
+    const proceeds = sellQty * price - fees
+    const proceedsUsd = toUsd(proceeds, rateDate)
+
+    realizedPnL += proceeds - avgCost * sellQty
+    if (proceedsUsd == null) usdTrackComplete = false
+    else realizedPnLUsd += proceedsUsd - avgCostUsd * sellQty
+
     costBasis -= avgCost * sellQty
+    costBasisUsd -= avgCostUsd * sellQty
     quantity -= sellQty
   }
 
   const marketValue = quantity * currentPrice
   const unrealizedPnL = marketValue - costBasis
   const unrealizedPct = costBasis > 0 ? (unrealizedPnL / costBasis) * 100 : 0
+  const totalPnL = unrealizedPnL + realizedPnL
   const avgCost = quantity > 0 ? costBasis / quantity : 0
+
+  let marketValueUsd: number | null = null
+  let unrealizedPnLUsd: number | null = null
+  let totalPnLUsd: number | null = null
+  let costBasisUsdOut: number | null = null
+  let realizedPnLUsdOut: number | null = null
+
+  if (assetCurrency === 'USD') {
+    marketValueUsd = marketValue
+    costBasisUsdOut = costBasisUsd
+    unrealizedPnLUsd = unrealizedPnL
+    realizedPnLUsdOut = realizedPnLUsd
+    totalPnLUsd = totalPnL
+  } else if (usdTrackComplete && currentUsdArsRate > 0) {
+    marketValueUsd = marketValue / currentUsdArsRate
+    costBasisUsdOut = costBasisUsd
+    unrealizedPnLUsd = marketValueUsd - costBasisUsd
+    realizedPnLUsdOut = realizedPnLUsd
+    totalPnLUsd = (unrealizedPnLUsd ?? 0) + realizedPnLUsd
+  }
 
   return {
     quantity,
@@ -40,6 +110,14 @@ export function computePosition(
     marketValue,
     unrealizedPnL,
     unrealizedPct,
+    realizedPnL,
+    totalPnL,
+    costBasisUsd: costBasisUsdOut,
+    marketValueUsd,
+    unrealizedPnLUsd,
+    realizedPnLUsd: realizedPnLUsdOut,
+    totalPnLUsd,
+    missingFxDates: [...missingFxDates].sort(),
   }
 }
 
@@ -54,6 +132,22 @@ export function convertAmount(
   if (usdArsRate <= 0) return amount
   if (from === 'USD' && to === 'ARS') return amount * usdArsRate
   return amount / usdArsRate
+}
+
+/**
+ * Elige el monto a mostrar: para ARS→USD usa valuación histórica/actual en USD
+ * cuando está disponible (costo/P&L con TC diario), no el TC de hoy sobre el costo.
+ */
+export function displayAmount(
+  nativeAmount: number,
+  usdAmount: number | null,
+  assetCurrency: CurrencyCode,
+  displayCurrency: CurrencyCode,
+  currentUsdArsRate: number,
+): number {
+  if (assetCurrency === displayCurrency) return nativeAmount
+  if (displayCurrency === 'USD' && usdAmount != null) return usdAmount
+  return convertAmount(nativeAmount, assetCurrency, displayCurrency, currentUsdArsRate)
 }
 
 export function formatMoney(value: number, currency: CurrencyCode = 'USD'): string {

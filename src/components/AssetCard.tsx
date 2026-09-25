@@ -1,6 +1,6 @@
 import type { Asset, CurrencyCode, Movement, PositionSummary } from '../types'
 import { ASSET_TYPE_LABELS } from '../types'
-import { convertAmount, formatMoney, formatPct, formatQty, pnlClass } from '../lib/portfolio'
+import { displayAmount, formatMoney, formatPct, formatQty, pnlClass } from '../lib/portfolio'
 
 interface AssetCardProps {
   asset: Asset
@@ -20,20 +20,48 @@ export function AssetCard({
   onSelect,
 }: AssetCardProps) {
   const hasPosition = position.quantity > 0
-  const price = convertAmount(
+  const price = displayAmount(
     Number(asset.current_price),
+    asset.currency === 'USD' ? Number(asset.current_price) : Number(asset.current_price) / usdArsRate,
     asset.currency,
     displayCurrency,
     usdArsRate,
   )
-  const marketValue = convertAmount(
+  const marketValue = displayAmount(
     position.marketValue,
+    position.marketValueUsd,
     asset.currency,
     displayCurrency,
     usdArsRate,
   )
-  const invested = convertAmount(position.costBasis, asset.currency, displayCurrency, usdArsRate)
-  const pnl = convertAmount(position.unrealizedPnL, asset.currency, displayCurrency, usdArsRate)
+  const invested = displayAmount(
+    position.costBasis,
+    position.costBasisUsd,
+    asset.currency,
+    displayCurrency,
+    usdArsRate,
+  )
+  const unrealized = displayAmount(
+    position.unrealizedPnL,
+    position.unrealizedPnLUsd,
+    asset.currency,
+    displayCurrency,
+    usdArsRate,
+  )
+  const realized = displayAmount(
+    position.realizedPnL,
+    position.realizedPnLUsd,
+    asset.currency,
+    displayCurrency,
+    usdArsRate,
+  )
+  const total = displayAmount(
+    position.totalPnL,
+    position.totalPnLUsd,
+    asset.currency,
+    displayCurrency,
+    usdArsRate,
+  )
 
   return (
     <button
@@ -67,13 +95,27 @@ export function AssetCard({
           <span>{hasPosition ? formatMoney(invested, displayCurrency) : '—'}</span>
         </div>
         <div>
-          <span className="label">P&L</span>
-          <span className={hasPosition ? pnlClass(pnl) : ''}>
+          <span className="label">P&L no realizado</span>
+          <span className={hasPosition ? pnlClass(unrealized) : ''}>
             {hasPosition
-              ? `${formatMoney(pnl, displayCurrency)} (${formatPct(position.unrealizedPct)})`
-              : 'Sin movimientos'}
+              ? `${formatMoney(unrealized, displayCurrency)} (${formatPct(position.unrealizedPct)})`
+              : '—'}
           </span>
         </div>
+        <div>
+          <span className="label">P&L realizado</span>
+          <span className={pnlClass(realized)}>{formatMoney(realized, displayCurrency)}</span>
+        </div>
+        <div>
+          <span className="label">P&L total</span>
+          <span className={pnlClass(total)}>{formatMoney(total, displayCurrency)}</span>
+        </div>
+        {position.missingFxDates.length > 0 ? (
+          <div>
+            <span className="label">TC histórico</span>
+            <span className="muted">Faltan {position.missingFxDates.length} día(s)</span>
+          </div>
+        ) : null}
       </div>
     </button>
   )

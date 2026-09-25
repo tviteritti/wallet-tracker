@@ -51,11 +51,28 @@ export interface PositionSummary {
   marketValue: number
   unrealizedPnL: number
   unrealizedPct: number
+  realizedPnL: number
+  totalPnL: number
+  /** Costo remanente valuado en USD con TC histórico por día (null si faltan TC) */
+  costBasisUsd: number | null
+  marketValueUsd: number | null
+  unrealizedPnLUsd: number | null
+  realizedPnLUsd: number | null
+  totalPnLUsd: number | null
+  missingFxDates: string[]
 }
 
 export interface AppSettings {
   id: number
   usd_ars_rate: number
+  updated_at: string
+}
+
+export interface DailyFxRate {
+  rate_date: string
+  usd_ars_rate: number
+  notes: string | null
+  created_at: string
   updated_at: string
 }
 

@@ -33,6 +33,14 @@ create table public.app_settings (
   updated_at timestamptz not null default now()
 );
 
+create table public.daily_fx_rates (
+  rate_date date primary key,
+  usd_ars_rate numeric(20, 6) not null check (usd_ars_rate > 0),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 insert into public.app_settings (id, usd_ars_rate) values (1, 1000)
 on conflict (id) do nothing;
 
@@ -59,9 +67,15 @@ before update on public.app_settings
 for each row
 execute function public.set_updated_at();
 
+create trigger daily_fx_rates_set_updated_at
+before update on public.daily_fx_rates
+for each row
+execute function public.set_updated_at();
+
 alter table public.assets enable row level security;
 alter table public.movements enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.daily_fx_rates enable row level security;
 
 create policy "Authenticated full access assets" on public.assets
   for all to authenticated
@@ -72,5 +86,9 @@ create policy "Authenticated full access movements" on public.movements
   using (true) with check (true);
 
 create policy "Authenticated full access settings" on public.app_settings
+  for all to authenticated
+  using (true) with check (true);
+
+create policy "Authenticated full access daily_fx_rates" on public.daily_fx_rates
   for all to authenticated
   using (true) with check (true);
