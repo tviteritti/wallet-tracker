@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Wallet Tracker">
+  <rect width="512" height="512" rx="96" fill="#0f3d3e"/>
+  <path fill="#b8e0d2" d="M128 168h256a32 32 0 0 1 32 32v160a32 32 0 0 1-32 32H128a32 32 0 0 1-32-32V200a32 32 0 0 1 32-32zm0 48v112h256V216H128zm208 40a28 28 0 1 1 0 56 28 28 0 0 1 0-56z"/>
+  <path fill="#f4fbf8" d="M176 128h160c8.8 0 16 7.2 16 16v24H160v-24c0-8.8 7.2-16 16-16z"/>
+</svg>
