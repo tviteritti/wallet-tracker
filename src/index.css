@@ -744,12 +744,78 @@ textarea:focus {
   text-align: right;
 }
 
+.group-legs {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.group-legs li {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.7fr 1fr;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.venue-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.ibit-calc h3 {
+  margin-bottom: 0.35rem;
+}
+
+.calc-formula,
+.calc-fx {
+  margin: 0.85rem 0 0;
+}
+
+.calc-actions {
+  margin-top: 0.75rem;
+}
+
+.calc-results {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.quote-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.quote-row {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr 1fr 1.2fr 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.quote-row .label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 @media (max-width: 720px) {
   .summary-strip,
   .summary-strip-wide,
   .form-grid,
   .detail-metrics,
-  .allocation-chart {
+  .allocation-chart,
+  .calc-results,
+  .quote-row,
+  .group-legs li {
     grid-template-columns: 1fr;
   }
 

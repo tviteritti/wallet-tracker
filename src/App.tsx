@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { AllocationChart, type ChartSlice } from './components/AllocationChart'
 import { AssetCard, MovementList } from './components/AssetCard'
 import { AssetForm } from './components/AssetForm'
+import { AssetGroupCard } from './components/AssetGroupCard'
 import { FxRatesPanel } from './components/FxRatesPanel'
+import { IbitGroupDetail } from './components/IbitGroupDetail'
 import { LoginForm } from './components/LoginForm'
 import { Modal } from './components/Modal'
 import { MovementForm } from './components/MovementForm'
@@ -11,6 +13,7 @@ import { useDailyFxRates } from './hooks/useDailyFxRates'
 import { usePortfolio } from './hooks/usePortfolio'
 import { useSettings } from './hooks/useSettings'
 import { useTheme } from './hooks/useTheme'
+import { sortByVenue } from './lib/ibit'
 import {
   computePosition,
   displayAmount,
@@ -29,12 +32,13 @@ import type {
 } from './types'
 import { ASSET_TYPE_LABELS, CURRENCIES } from './types'
 
-type View = 'list' | 'create' | 'detail' | 'fx'
+type View = 'list' | 'create' | 'detail' | 'group' | 'fx'
 type TypeFilter = 'all' | AssetType
 type SortMode = 'invested_desc' | 'invested_asc' | 'name'
 
 type ConfirmState =
   | { kind: 'asset'; symbol: string }
+  | { kind: 'group'; name: string }
   | { kind: 'movement'; movement: Movement }
   | null
 
@@ -92,9 +96,12 @@ function AuthenticatedApp({
     movements,
     loading,
     error,
+    groups,
     createAsset,
     updateAsset,
     deleteAsset,
+    updateGroup,
+    deleteGroup,
     createMovement,
     updateMovement,
     deleteMovement,
@@ -111,6 +118,7 @@ function AuthenticatedApp({
 
   const [view, setView] = useState<View>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [editingAsset, setEditingAsset] = useState(false)
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState('')
@@ -138,6 +146,15 @@ function AuthenticatedApp({
   const ASSET_SLICE_COLORS = ['#1f6b63', '#3aa691', '#7eb6a6', '#c4a35a', '#4f7cac', '#8fa37a', '#6b7c85', '#a8c5ae']
 
   const selected = assets.find((asset) => asset.id === selectedId) ?? null
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null
+  const selectedGroupLegs = useMemo(
+    () => sortByVenue(assets.filter((asset) => asset.group_id === selectedGroupId)),
+    [assets, selectedGroupId],
+  )
+  const referenceBtcPrice = Number(
+    assets.find((asset) => asset.symbol === 'BTC' && asset.asset_type === 'crypto')?.current_price ?? 0,
+  )
+  const groupsById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups])
   const assetMovements = useMemo(
     () => movements.filter((m) => m.asset_id === selectedId),
     [movements, selectedId],
@@ -273,7 +290,8 @@ function AuthenticatedApp({
     }
 
     const focused = filteredAssets.filter((asset) => asset.asset_type === chartFocus)
-    const values = focused.map((asset) => {
+    const buckets = new Map<string, { id: string; label: string; value: number }>()
+    for (const asset of focused) {
       const position = positions.get(asset.id)
       const value = position
         ? displayAmount(
@@ -284,50 +302,114 @@ function AuthenticatedApp({
             usdArsRate,
           )
         : 0
-      return { asset, value }
-    })
-    const total = values.reduce((sum, item) => sum + Math.max(item.value, 0), 0)
-    return values
-      .filter((item) => item.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .map((item, index) => ({
-        id: item.asset.id,
-        label: `${item.asset.symbol} · ${item.asset.name}`,
-        value: item.value,
-        pct: total > 0 ? (item.value / total) * 100 : 0,
-        color: ASSET_SLICE_COLORS[index % ASSET_SLICE_COLORS.length],
-      }))
-  }, [allocation, chartFocus, filteredAssets, positions, displayCurrency, usdArsRate])
+      if (value <= 0) continue
+      const group = asset.group_id ? groupsById.get(asset.group_id) : undefined
+      const id = group?.id ?? asset.id
+      const current = buckets.get(id)
+      buckets.set(id, {
+        id,
+        label: group ? `${group.name} · CEDEAR Bitcoin` : `${asset.symbol} · ${asset.name}`,
+        value: (current?.value ?? 0) + value,
+      })
+    }
+    const values = [...buckets.values()].sort((a, b) => b.value - a.value)
+    const total = values.reduce((sum, item) => sum + item.value, 0)
+    return values.map((item, index) => ({
+      id: item.id,
+      label: item.label,
+      value: item.value,
+      pct: total > 0 ? (item.value / total) * 100 : 0,
+      color: ASSET_SLICE_COLORS[index % ASSET_SLICE_COLORS.length],
+    }))
+  }, [allocation, chartFocus, filteredAssets, positions, displayCurrency, usdArsRate, groupsById])
 
-  const visibleAssets = useMemo(() => {
-    return [...filteredAssets].sort((a, b) => {
+  const visibleItems = useMemo(() => {
+    const investedOf = (asset: (typeof filteredAssets)[number]) =>
+      displayAmount(
+        positions.get(asset.id)?.costBasis ?? 0,
+        positions.get(asset.id)?.costBasisUsd ?? null,
+        asset.currency,
+        displayCurrency,
+        usdArsRate,
+      )
+
+    const loose: { key: string; name: string; invested: number; kind: 'asset'; asset: (typeof filteredAssets)[number] }[] = []
+    const grouped = new Map<string, (typeof filteredAssets)[number][]>()
+
+    for (const asset of filteredAssets) {
+      if (asset.group_id && groupsById.has(asset.group_id)) {
+        const list = grouped.get(asset.group_id) ?? []
+        list.push(asset)
+        grouped.set(asset.group_id, list)
+        continue
+      }
+      loose.push({ key: asset.id, name: asset.name, invested: investedOf(asset), kind: 'asset', asset })
+    }
+
+    const items: (
+      | { key: string; name: string; invested: number; kind: 'asset'; asset: (typeof filteredAssets)[number] }
+      | {
+          key: string
+          name: string
+          invested: number
+          kind: 'group'
+          group: (typeof groups)[number]
+          legs: (typeof filteredAssets)[number][]
+        }
+    )[] = [...loose]
+
+    for (const [groupId, legs] of grouped) {
+      const group = groupsById.get(groupId)
+      if (!group) continue
+      items.push({
+        key: groupId,
+        name: group.name,
+        invested: legs.reduce((sum, leg) => sum + investedOf(leg), 0),
+        kind: 'group',
+        group,
+        legs: sortByVenue(legs),
+      })
+    }
+
+    items.sort((a, b) => {
       if (sortMode === 'name') return a.name.localeCompare(b.name, 'es')
-      const investedA = displayAmount(
-        positions.get(a.id)?.costBasis ?? 0,
-        positions.get(a.id)?.costBasisUsd ?? null,
-        a.currency,
-        displayCurrency,
-        usdArsRate,
-      )
-      const investedB = displayAmount(
-        positions.get(b.id)?.costBasis ?? 0,
-        positions.get(b.id)?.costBasisUsd ?? null,
-        b.currency,
-        displayCurrency,
-        usdArsRate,
-      )
-      return sortMode === 'invested_desc' ? investedB - investedA : investedA - investedB
+      return sortMode === 'invested_desc' ? b.invested - a.invested : a.invested - b.invested
     })
-  }, [filteredAssets, sortMode, positions, displayCurrency, usdArsRate])
+    return items
+  }, [filteredAssets, sortMode, positions, displayCurrency, usdArsRate, groupsById])
 
   function goHome() {
     setView('list')
     setSelectedId(null)
+    setSelectedGroupId(null)
     setEditingAsset(false)
     setEditingPrice(false)
     setEditingMovement(null)
     setFormError(null)
     setChartFocus(null)
+  }
+
+  function openGroup(id: string) {
+    setSelectedGroupId(id)
+    setSelectedId(null)
+    setView('group')
+    setEditingAsset(false)
+    setEditingPrice(false)
+    setEditingMovement(null)
+    setFormError(null)
+  }
+
+  async function run(action: () => Promise<void>, fallback: string) {
+    setBusy(true)
+    setFormError(null)
+    try {
+      await action()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : fallback)
+      throw err
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleCreateAsset(data: AssetFormData) {
@@ -418,6 +500,10 @@ function AuthenticatedApp({
     try {
       if (confirm.kind === 'asset') {
         await deleteAsset(selectedId!)
+        setConfirm(null)
+        goHome()
+      } else if (confirm.kind === 'group') {
+        await deleteGroup(selectedGroupId!)
         setConfirm(null)
         goHome()
       } else {
@@ -642,6 +728,10 @@ function AuthenticatedApp({
                     setChartFocus(id as AssetType)
                     return
                   }
+                  if (groupsById.has(id)) {
+                    openGroup(id)
+                    return
+                  }
                   setSelectedId(id)
                   setView('detail')
                   setEditingAsset(false)
@@ -663,28 +753,40 @@ function AuthenticatedApp({
                 Agregar primer activo
               </button>
             </div>
-          ) : visibleAssets.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <p className="empty">No hay activos para ese filtro.</p>
           ) : (
             <div className="asset-grid">
-              {visibleAssets.map((asset) => (
-                <AssetCard
-                  key={asset.id}
-                  asset={asset}
-                  position={positions.get(asset.id)!}
-                  displayCurrency={displayCurrency}
-                  usdArsRate={usdArsRate}
-                  selected={selectedId === asset.id}
-                  onSelect={() => {
-                    setSelectedId(asset.id)
-                    setView('detail')
-                    setEditingAsset(false)
-                    setEditingPrice(false)
-                    setEditingMovement(null)
-                    setFormError(null)
-                  }}
-                />
-              ))}
+              {visibleItems.map((item) =>
+                item.kind === 'group' ? (
+                  <AssetGroupCard
+                    key={item.key}
+                    group={item.group}
+                    legs={item.legs}
+                    positions={positions}
+                    displayCurrency={displayCurrency}
+                    usdArsRate={usdArsRate}
+                    onSelect={() => openGroup(item.group.id)}
+                  />
+                ) : (
+                  <AssetCard
+                    key={item.key}
+                    asset={item.asset}
+                    position={positions.get(item.asset.id)!}
+                    displayCurrency={displayCurrency}
+                    usdArsRate={usdArsRate}
+                    selected={selectedId === item.asset.id}
+                    onSelect={() => {
+                      setSelectedId(item.asset.id)
+                      setView('detail')
+                      setEditingAsset(false)
+                      setEditingPrice(false)
+                      setEditingMovement(null)
+                      setFormError(null)
+                    }}
+                  />
+                ),
+              )}
             </div>
           )}
         </>
@@ -1019,6 +1121,58 @@ function AuthenticatedApp({
           </div>
         </section>
       ) : null}
+
+      {view === 'group' && selectedGroup ? (
+        <section className="detail-layout">
+          <section className="controls-bar">
+            <label className="control-field">
+              Ver en
+              <select
+                value={displayCurrency}
+                onChange={(e) => setDisplayCurrency(e.target.value as CurrencyCode)}
+              >
+                {CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+          <IbitGroupDetail
+            group={selectedGroup}
+            legs={selectedGroupLegs}
+            positions={positions}
+            movements={movements}
+            displayCurrency={displayCurrency}
+            usdArsRate={usdArsRate}
+            referenceBtcPrice={referenceBtcPrice}
+            busy={busy}
+            run={run}
+            onUpdateAsset={(id, data) => updateAsset(id, data)}
+            onUpdateGroup={(id, data) => updateGroup(id, data)}
+            onCreateMovement={(assetId, data) => createMovement(assetId, data)}
+            onUpdateMovement={(id, data) => updateMovement(id, data)}
+            onDeleteMovement={(movement) => setConfirm({ kind: 'movement', movement })}
+            onDeleteGroup={() => setConfirm({ kind: 'group', name: selectedGroup.name })}
+          />
+        </section>
+      ) : null}
+
+      <Modal
+        open={confirm?.kind === 'group'}
+        title="Eliminar IBIT"
+        confirmLabel="Eliminar"
+        danger
+        busy={busy}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => void handleConfirmDelete()}
+      >
+        <p>
+          ¿Eliminar <strong>{confirm?.kind === 'group' ? confirm.name : ''}</strong> en las tres
+          plazas (pesos, MEP y CCL) y todos sus movimientos? Esta acción no se puede deshacer.
+        </p>
+      </Modal>
 
       <Modal
         open={confirm?.kind === 'asset'}

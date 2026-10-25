@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Asset, AssetFormData, Movement, MovementFormData } from '../types'
+import type { Asset, AssetFormData, AssetGroup, Movement, MovementFormData } from '../types'
+
+function asNumber(value: unknown): number {
+  return Number(value)
+}
+
+function mapGroup(row: AssetGroup): AssetGroup {
+  return {
+    ...row,
+    cedear_ratio: asNumber(row.cedear_ratio),
+    btc_per_share: asNumber(row.btc_per_share),
+  }
+}
 
 export function usePortfolio() {
   const [assets, setAssets] = useState<Asset[]>([])
+  const [groups, setGroups] = useState<AssetGroup[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -12,18 +25,25 @@ export function usePortfolio() {
     setLoading(true)
     setError(null)
 
-    const [assetsRes, movementsRes] = await Promise.all([
+    const [assetsRes, groupsRes, movementsRes] = await Promise.all([
       supabase.from('assets').select('*').order('name'),
+      supabase.from('asset_groups').select('*').order('name'),
       supabase.from('movements').select('*').order('traded_at', { ascending: false }),
     ])
 
-    if (assetsRes.error || movementsRes.error) {
-      setError(assetsRes.error?.message ?? movementsRes.error?.message ?? 'Error al cargar')
+    if (assetsRes.error || groupsRes.error || movementsRes.error) {
+      setError(
+        assetsRes.error?.message ??
+          groupsRes.error?.message ??
+          movementsRes.error?.message ??
+          'Error al cargar',
+      )
       setLoading(false)
       return
     }
 
     setAssets(assetsRes.data as Asset[])
+    setGroups((groupsRes.data as AssetGroup[]).map(mapGroup))
     setMovements(movementsRes.data as Movement[])
     setLoading(false)
   }, [])
@@ -61,6 +81,27 @@ export function usePortfolio() {
 
   const deleteAsset = async (id: string) => {
     const { error: deleteError } = await supabase.from('assets').delete().eq('id', id)
+    if (deleteError) throw deleteError
+    await refresh()
+  }
+
+  const updateGroup = async (
+    id: string,
+    data: { cedear_ratio: number; btc_per_share: number },
+  ) => {
+    const { error: updateError } = await supabase
+      .from('asset_groups')
+      .update({
+        cedear_ratio: data.cedear_ratio,
+        btc_per_share: data.btc_per_share,
+      })
+      .eq('id', id)
+    if (updateError) throw updateError
+    await refresh()
+  }
+
+  const deleteGroup = async (id: string) => {
+    const { error: deleteError } = await supabase.from('asset_groups').delete().eq('id', id)
     if (deleteError) throw deleteError
     await refresh()
   }
@@ -103,6 +144,7 @@ export function usePortfolio() {
 
   return {
     assets,
+    groups,
     movements,
     loading,
     error,
@@ -110,6 +152,8 @@ export function usePortfolio() {
     createAsset,
     updateAsset,
     deleteAsset,
+    updateGroup,
+    deleteGroup,
     createMovement,
     updateMovement,
     deleteMovement,

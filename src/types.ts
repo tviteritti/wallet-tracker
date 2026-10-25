@@ -1,6 +1,8 @@
 export type AssetType = 'crypto' | 'stock' | 'cedear' | 'bond' | 'etf' | 'fiat' | 'other'
 export type MovementType = 'buy' | 'sell'
 export type CurrencyCode = 'USD' | 'ARS'
+export type QuoteVenue = 'ars' | 'mep' | 'ccl'
+export type AssetGroupKind = 'ibit'
 
 export interface Asset {
   id: string
@@ -9,6 +11,19 @@ export interface Asset {
   asset_type: AssetType
   currency: CurrencyCode
   current_price: number
+  notes: string | null
+  group_id: string | null
+  venue: QuoteVenue | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AssetGroup {
+  id: string
+  name: string
+  kind: AssetGroupKind
+  cedear_ratio: number
+  btc_per_share: number
   notes: string | null
   created_at: string
   updated_at: string
