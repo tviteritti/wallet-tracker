@@ -24,22 +24,30 @@ export function isQuoteVenue(value: string | null | undefined): value is QuoteVe
   return value === 'ars' || value === 'mep' || value === 'ccl'
 }
 
-export interface IbitLegQuote {
-  venue: QuoteVenue
+export interface UsdCheck {
   marketPrice: number
-  theoretical: number
+  fairUsd: number
   impliedBtc: number | null
   gapPct: number | null
 }
 
+export interface PesoCheck {
+  rate: number
+  fairArs: number
+  usdPrice: number | null
+  impliedBtc: number | null
+  gapPct: number | null
+  versusUsdVenuePct: number | null
+}
+
 export interface IbitQuote {
-  btcPerCedear: number
   etfUsd: number
   cedearUsd: number
-  cedearArs: number
-  legs: IbitLegQuote[]
-  impliedMep: number | null
-  impliedCcl: number | null
+  mep: UsdCheck
+  ccl: UsdCheck
+  pesoPrice: number
+  viaMep: PesoCheck | null
+  viaCcl: PesoCheck | null
 }
 
 function gapPct(market: number, theoretical: number): number | null {
@@ -47,54 +55,64 @@ function gapPct(market: number, theoretical: number): number | null {
   return ((market - theoretical) / theoretical) * 100
 }
 
+function usdCheck(marketPrice: number, fairUsd: number, btcPerShare: number, cedearRatio: number): UsdCheck {
+  const impliedBtc = marketPrice > 0 ? (marketPrice * cedearRatio) / btcPerShare : null
+  return {
+    marketPrice,
+    fairUsd,
+    impliedBtc,
+    gapPct: gapPct(marketPrice, fairUsd),
+  }
+}
+
+function pesoCheck(
+  pesoPrice: number,
+  rate: number,
+  fairUsd: number,
+  usdVenuePrice: number,
+  btcPerShare: number,
+  cedearRatio: number,
+): PesoCheck | null {
+  if (!(rate > 0)) return null
+  const fairArs = fairUsd * rate
+  const usdPrice = pesoPrice > 0 ? pesoPrice / rate : null
+  const impliedBtc = usdPrice != null ? (usdPrice * cedearRatio) / btcPerShare : null
+  const viaVenue = usdVenuePrice > 0 ? usdVenuePrice * rate : 0
+  return {
+    rate,
+    fairArs,
+    usdPrice,
+    impliedBtc,
+    gapPct: gapPct(pesoPrice, fairArs),
+    versusUsdVenuePct: gapPct(pesoPrice, viaVenue),
+  }
+}
+
 export function buildIbitQuote(input: {
   btcUsd: number
   btcPerShare: number
   cedearRatio: number
-  usdArsRate: number
+  mepRate: number
+  cclRate: number
   prices: Partial<Record<QuoteVenue, number>>
 }): IbitQuote | null {
-  const { btcUsd, btcPerShare, cedearRatio, usdArsRate, prices } = input
+  const { btcUsd, btcPerShare, cedearRatio, mepRate, cclRate, prices } = input
   if (!(btcUsd > 0) || !(btcPerShare > 0) || !(cedearRatio > 0)) return null
 
   const etfUsd = btcUsd * btcPerShare
   const cedearUsd = etfUsd / cedearRatio
-  const cedearArs = usdArsRate > 0 ? cedearUsd * usdArsRate : 0
-  const btcPerCedear = btcPerShare / cedearRatio
-
-  const venues: QuoteVenue[] = ['ars', 'mep', 'ccl']
-  const legs = venues.map((venue) => {
-    const marketPrice = Number(prices[venue] ?? 0)
-    const theoretical = venue === 'ars' ? cedearArs : cedearUsd
-    let impliedBtc: number | null = null
-    if (marketPrice > 0) {
-      if (venue === 'ars') {
-        impliedBtc = usdArsRate > 0 ? (marketPrice / usdArsRate) * cedearRatio / btcPerShare : null
-      } else {
-        impliedBtc = (marketPrice * cedearRatio) / btcPerShare
-      }
-    }
-    return {
-      venue,
-      marketPrice,
-      theoretical,
-      impliedBtc,
-      gapPct: gapPct(marketPrice, theoretical),
-    }
-  })
-
-  const ars = prices.ars ?? 0
-  const mep = prices.mep ?? 0
-  const ccl = prices.ccl ?? 0
+  const pesoPrice = prices.ars ?? 0
+  const mepPrice = prices.mep ?? 0
+  const cclPrice = prices.ccl ?? 0
 
   return {
-    btcPerCedear,
     etfUsd,
     cedearUsd,
-    cedearArs,
-    legs,
-    impliedMep: ars > 0 && mep > 0 ? ars / mep : null,
-    impliedCcl: ars > 0 && ccl > 0 ? ars / ccl : null,
+    mep: usdCheck(mepPrice, cedearUsd, btcPerShare, cedearRatio),
+    ccl: usdCheck(cclPrice, cedearUsd, btcPerShare, cedearRatio),
+    pesoPrice,
+    viaMep: pesoCheck(pesoPrice, mepRate, cedearUsd, mepPrice, btcPerShare, cedearRatio),
+    viaCcl: pesoCheck(pesoPrice, cclRate, cedearUsd, cclPrice, btcPerShare, cedearRatio),
   }
 }
 

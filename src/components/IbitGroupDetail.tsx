@@ -32,7 +32,6 @@ interface IbitGroupDetailProps {
   busy: boolean
   run: (action: () => Promise<void>, fallback: string) => Promise<void>
   onUpdateAsset: (id: string, data: { current_price: number }) => Promise<void>
-  onUpdateGroup: (id: string, data: { cedear_ratio: number; btc_per_share: number }) => Promise<void>
   onCreateMovement: (assetId: string, data: MovementFormData) => Promise<void>
   onUpdateMovement: (id: string, data: MovementFormData) => Promise<void>
   onDeleteMovement: (movement: Movement) => void
@@ -56,7 +55,6 @@ export function IbitGroupDetail({
   busy,
   run,
   onUpdateAsset,
-  onUpdateGroup,
   onCreateMovement,
   onUpdateMovement,
   onDeleteMovement,
@@ -137,16 +135,9 @@ export function IbitGroupDetail({
         <IbitCalculator
           btcPerShare={Number(group.btc_per_share)}
           cedearRatio={Number(group.cedear_ratio)}
-          usdArsRate={usdArsRate}
           referenceBtcPrice={referenceBtcPrice}
           prices={pricesFromLegs(legs)}
           busy={busy}
-          onSaveParams={(nextShare, nextRatio) =>
-            run(
-              () => onUpdateGroup(group.id, { btc_per_share: nextShare, cedear_ratio: nextRatio }),
-              'No se pudieron guardar los parámetros',
-            )
-          }
           onApplyPrice={(nextVenue, price) => {
             const target = legs.find((item) => item.venue === nextVenue)
             if (!target) return Promise.resolve()

@@ -1,216 +1,250 @@
 import { useState } from 'react'
-import { buildIbitQuote, VENUE_LABELS, VENUE_SHORT } from '../lib/ibit'
-import { formatMoney, formatPct, formatQty, pnlClass } from '../lib/portfolio'
+import { buildIbitQuote } from '../lib/ibit'
+import { formatMoney, formatPct, pnlClass } from '../lib/portfolio'
 import type { QuoteVenue } from '../types'
 
 interface IbitCalculatorProps {
   btcPerShare: number
   cedearRatio: number
-  usdArsRate: number
   referenceBtcPrice: number
   prices: Partial<Record<QuoteVenue, number>>
   busy: boolean
-  onSaveParams: (btcPerShare: number, cedearRatio: number) => Promise<void>
   onApplyPrice: (venue: QuoteVenue, price: number) => Promise<void>
 }
 
-function formatBtcFraction(value: number): string {
-  return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 12 }).format(value)
+interface CalcDraft {
+  btc: string
+  mepRate: string
+  cclRate: string
+  ars: string
+  mep: string
+  ccl: string
+}
+
+const STORAGE_KEY = 'wallet-tracker:ibit-calc'
+
+const PRICE_FIELDS: { venue: QuoteVenue; key: 'ars' | 'mep' | 'ccl'; label: string }[] = [
+  { venue: 'ars', key: 'ars', label: 'Precio en pesos (IBIT)' },
+  { venue: 'mep', key: 'mep', label: 'Precio en dólares MEP (IBITD)' },
+  { venue: 'ccl', key: 'ccl', label: 'Precio en dólares CCL (IBITC)' },
+]
+
+function correlationText(gapPct: number): string {
+  if (Math.abs(gapPct) < 0.05) return 'en línea con BTC'
+  if (gapPct > 0) return `${formatPct(gapPct)} más caro que BTC`
+  return `${formatPct(gapPct)} más barato que BTC`
+}
+
+function readDraft(): CalcDraft | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CalcDraft>
+    if (!parsed || typeof parsed !== 'object') return null
+    return {
+      btc: String(parsed.btc ?? ''),
+      mepRate: String(parsed.mepRate ?? ''),
+      cclRate: String(parsed.cclRate ?? ''),
+      ars: String(parsed.ars ?? ''),
+      mep: String(parsed.mep ?? ''),
+      ccl: String(parsed.ccl ?? ''),
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeDraft(draft: CalcDraft) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
+  } catch {
+    // El cálculo sigue en memoria si el navegador no guarda.
+  }
 }
 
 export function IbitCalculator({
   btcPerShare,
   cedearRatio,
-  usdArsRate,
   referenceBtcPrice,
   prices,
   busy,
-  onSaveParams,
   onApplyPrice,
 }: IbitCalculatorProps) {
-  const [btcOverride, setBtcOverride] = useState<string | null>(null)
-  const [shareOverride, setShareOverride] = useState<string | null>(null)
-  const [ratioOverride, setRatioOverride] = useState<string | null>(null)
+  const [draft, setDraft] = useState<CalcDraft | null>(() => readDraft())
 
-  const btcDraft = btcOverride ?? (referenceBtcPrice > 0 ? String(referenceBtcPrice) : '')
-  const shareDraft = shareOverride ?? String(btcPerShare)
-  const ratioDraft = ratioOverride ?? String(cedearRatio)
-  const paramsDirty = shareOverride !== null || ratioOverride !== null
+  const fromPortfolio: CalcDraft = {
+    btc: referenceBtcPrice > 0 ? String(referenceBtcPrice) : '',
+    mepRate: '',
+    cclRate: '',
+    ars: (prices.ars ?? 0) > 0 ? String(prices.ars) : '',
+    mep: (prices.mep ?? 0) > 0 ? String(prices.mep) : '',
+    ccl: (prices.ccl ?? 0) > 0 ? String(prices.ccl) : '',
+  }
+  const shown = draft ?? fromPortfolio
+
+  function update(partial: Partial<CalcDraft>) {
+    const next = { ...shown, ...partial }
+    setDraft(next)
+    writeDraft(next)
+  }
 
   const quote = buildIbitQuote({
-    btcUsd: Number(btcDraft),
-    btcPerShare: Number(shareDraft),
-    cedearRatio: Number(ratioDraft),
-    usdArsRate,
-    prices,
+    btcUsd: Number(shown.btc),
+    btcPerShare,
+    cedearRatio,
+    mepRate: Number(shown.mepRate),
+    cclRate: Number(shown.cclRate),
+    prices: {
+      ars: Number(shown.ars),
+      mep: Number(shown.mep),
+      ccl: Number(shown.ccl),
+    },
   })
 
   return (
     <div className="ibit-calc">
       <h3>Calculadora contra BTC</h3>
       <p className="muted">
-        Con el precio de BTC calcula el valor justo del CEDEAR. MEP y CCL se comparan en dólares.
-        Pesos usa el tipo de cambio de la app (1 USD = {formatQty(usdArsRate)} ARS).
+        Cargá los valores del momento. Mañana o dentro de un mes los cambiás y la cuenta se hace de
+        nuevo: si IBIT está caro o barato respecto de BTC, en pesos, en MEP y en CCL.
       </p>
 
-      <div className="form-grid">
-        <label className="span-2">
+      <div className="calc-inputs">
+        <label>
           Precio de BTC (USD)
           <input
             type="number"
             step="any"
             min="0"
-            value={btcDraft}
-            onChange={(event) => setBtcOverride(event.target.value)}
+            value={shown.btc}
+            onChange={(event) => update({ btc: event.target.value })}
           />
         </label>
         <label>
-          BTC por acción del ETF
+          Dólar MEP (pesos por dólar)
           <input
             type="number"
             step="any"
             min="0"
-            value={shareDraft}
-            onChange={(event) => setShareOverride(event.target.value)}
+            value={shown.mepRate}
+            placeholder="Ej. 1617"
+            onChange={(event) => update({ mepRate: event.target.value })}
           />
         </label>
         <label>
-          CEDEARs por acción
+          Dólar CCL (pesos por dólar)
           <input
             type="number"
             step="any"
             min="0"
-            value={ratioDraft}
-            onChange={(event) => setRatioOverride(event.target.value)}
+            value={shown.cclRate}
+            placeholder="Ej. 1651"
+            onChange={(event) => update({ cclRate: event.target.value })}
           />
         </label>
       </div>
 
-      <p className="muted calc-formula">
-        Precio justo del CEDEAR en USD = precio BTC × BTC por acción ÷ ratio.
-        {referenceBtcPrice > 0
-          ? ` Tu BTC cargado está en ${formatMoney(referenceBtcPrice, 'USD')}.`
-          : ''}
-      </p>
-
-      {paramsDirty ? (
-        <div className="form-actions calc-actions">
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => {
-              setShareOverride(null)
-              setRatioOverride(null)
-            }}
-          >
-            Descartar parámetros
-          </button>
-          <button
-            type="button"
-            className="btn secondary"
-            disabled={busy || !(Number(shareDraft) > 0) || !(Number(ratioDraft) > 0)}
-            onClick={() => {
-              void onSaveParams(Number(shareDraft), Number(ratioDraft))
-                .then(() => {
-                  setShareOverride(null)
-                  setRatioOverride(null)
-                })
-                .catch(() => undefined)
-            }}
-          >
-            Guardar parámetros
-          </button>
-        </div>
-      ) : null}
-
       {quote ? (
-        <>
-          <div className="calc-results">
-            <div>
-              <span className="label">1 CEDEAR</span>
-              <strong>{formatBtcFraction(quote.btcPerCedear)} BTC</strong>
-            </div>
-            <div>
-              <span className="label">ETF IBIT justo</span>
-              <strong>{formatMoney(quote.etfUsd, 'USD')}</strong>
-            </div>
-            <div>
-              <span className="label">CEDEAR justo</span>
-              <strong>{formatMoney(quote.cedearUsd, 'USD')}</strong>
-            </div>
-            <div>
-              <span className="label">CEDEAR justo en pesos</span>
-              <strong>{usdArsRate > 0 ? formatMoney(quote.cedearArs, 'ARS') : '—'}</strong>
-            </div>
-          </div>
+        <p className="calc-fair">
+          Con ese BTC, el CEDEAR debería valer {formatMoney(quote.cedearUsd, 'USD')}.
+          {quote.viaMep ? ` En pesos, con tu MEP: ${formatMoney(quote.viaMep.fairArs, 'ARS')}.` : ' Falta el dólar MEP para el precio en pesos.'}
+          {quote.viaCcl ? ` Con tu CCL: ${formatMoney(quote.viaCcl.fairArs, 'ARS')}.` : ' Falta el dólar CCL para el otro precio en pesos.'}
+        </p>
+      ) : (
+        <p className="empty">Ingresá el precio de BTC.</p>
+      )}
 
-          <ul className="quote-list">
-            {quote.legs.map((leg) => (
-              <li key={leg.venue} className="quote-row" data-venue={leg.venue}>
-                <div>
-                  <strong>{VENUE_SHORT[leg.venue]}</strong>
-                  <span className="muted">{VENUE_LABELS[leg.venue]}</span>
-                </div>
-                <div>
-                  <span className="label">Cotización</span>
-                  <span>
-                    {leg.marketPrice > 0
-                      ? formatMoney(leg.marketPrice, leg.venue === 'ars' ? 'ARS' : 'USD')
-                      : 'Sin precio'}
-                  </span>
-                </div>
-                <div>
-                  <span className="label">Justo</span>
-                  <span>
-                    {leg.theoretical > 0
-                      ? formatMoney(leg.theoretical, leg.venue === 'ars' ? 'ARS' : 'USD')
-                      : '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="label">Contra BTC</span>
-                  {leg.gapPct == null ? (
-                    <span className="muted">Sin cotización</span>
-                  ) : (
-                    <span className={pnlClass(-leg.gapPct)}>
-                      {formatPct(leg.gapPct)} {leg.gapPct > 0 ? 'más caro' : leg.gapPct < 0 ? 'más barato' : 'en línea'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <span className="label">BTC implícito</span>
-                  <span>
-                    {leg.impliedBtc != null ? formatMoney(leg.impliedBtc, 'USD') : '—'}
-                  </span>
-                </div>
+      <ul className="quote-list">
+        {PRICE_FIELDS.map((field) => {
+          const typed = Number(shown[field.key])
+          const saved = prices[field.venue] ?? 0
+          const dirty = typed > 0 && Math.abs(typed - saved) > 1e-6
+          const usd = field.venue === 'mep' ? quote?.mep : field.venue === 'ccl' ? quote?.ccl : null
+
+          return (
+            <li key={field.venue} className="quote-row" data-venue={field.venue}>
+              <label>
+                {field.label}
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={shown[field.key]}
+                  placeholder="Precio del broker"
+                  onChange={(event) => update({ [field.key]: event.target.value })}
+                />
+              </label>
+              <div className="quote-readout">
+                {field.venue === 'ars' ? (
+                  <PesoReadout quote={quote} />
+                ) : usd?.impliedBtc != null && usd.gapPct != null ? (
+                  <>
+                    <span className="label">Debería valer {formatMoney(usd.fairUsd, 'USD')}</span>
+                    <strong className={pnlClass(-usd.gapPct)}>
+                      Equivale a BTC {formatMoney(usd.impliedBtc, 'USD')}, {correlationText(usd.gapPct)}
+                    </strong>
+                  </>
+                ) : (
+                  <span className="muted">Cargá el precio que ves en el broker.</span>
+                )}
+              </div>
+              {dirty ? (
                 <button
                   type="button"
                   className="btn secondary"
-                  disabled={busy || !(leg.theoretical > 0)}
+                  disabled={busy}
                   onClick={() => {
-                    void onApplyPrice(leg.venue, leg.theoretical).catch(() => undefined)
+                    void onApplyPrice(field.venue, typed).catch(() => undefined)
                   }}
                 >
-                  Usar justo
+                  Guardar
                 </button>
-              </li>
-            ))}
-          </ul>
-
-          {quote.impliedMep != null || quote.impliedCcl != null ? (
-            <p className="muted calc-fx">
-              {quote.impliedMep != null
-                ? `Dólar implícito pesos/MEP: ${formatQty(quote.impliedMep)} ARS. `
-                : ''}
-              {quote.impliedCcl != null
-                ? `Dólar implícito pesos/CCL: ${formatQty(quote.impliedCcl)} ARS.`
-                : ''}
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <p className="empty">Ingresá el precio de BTC para ver el valor justo del CEDEAR.</p>
-      )}
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
+}
+
+function PesoReadout({ quote }: { quote: ReturnType<typeof buildIbitQuote> }) {
+  if (!quote) return <span className="muted">Ingresá el precio de BTC.</span>
+  if (!(quote.pesoPrice > 0)) return <span className="muted">Cargá el precio que ves en el broker.</span>
+  if (!quote.viaMep && !quote.viaCcl) {
+    return <span className="muted">Cargá el dólar MEP y el dólar CCL para comparar este precio con BTC.</span>
+  }
+
+  return (
+    <>
+      {quote.viaMep ? <PesoLine name="MEP" check={quote.viaMep} /> : <span className="muted">Falta el dólar MEP.</span>}
+      {quote.viaCcl ? <PesoLine name="CCL" check={quote.viaCcl} /> : <span className="muted">Falta el dólar CCL.</span>}
+    </>
+  )
+}
+
+function PesoLine({ name, check }: { name: string; check: NonNullable<IbitQuotePeso> }) {
+  return (
+    <p className="peso-line">
+      <span className="label">
+        Con dólar {name}: debería valer {formatMoney(check.fairArs, 'ARS')}
+        {check.versusUsdVenuePct != null
+          ? `. Contra la plaza ${name}, ${plazaText(check.versusUsdVenuePct)}`
+          : ''}
+      </span>
+      {check.impliedBtc != null && check.gapPct != null ? (
+        <strong className={pnlClass(-check.gapPct)}>
+          Equivale a BTC {formatMoney(check.impliedBtc, 'USD')}, {correlationText(check.gapPct)}
+        </strong>
+      ) : null}
+    </p>
+  )
+}
+
+type IbitQuotePeso = NonNullable<ReturnType<typeof buildIbitQuote>>['viaMep']
+
+function plazaText(gapPct: number): string {
+  if (Math.abs(gapPct) < 0.05) return 'está en línea.'
+  if (gapPct > 0) return `está ${formatPct(gapPct)} más caro.`
+  return `está ${formatPct(gapPct)} más barato.`
 }

@@ -100,7 +100,6 @@ function AuthenticatedApp({
     createAsset,
     updateAsset,
     deleteAsset,
-    updateGroup,
     deleteGroup,
     createMovement,
     updateMovement,
@@ -1150,7 +1149,6 @@ function AuthenticatedApp({
             busy={busy}
             run={run}
             onUpdateAsset={(id, data) => updateAsset(id, data)}
-            onUpdateGroup={(id, data) => updateGroup(id, data)}
             onCreateMovement={(assetId, data) => createMovement(assetId, data)}
             onUpdateMovement={(id, data) => updateMovement(id, data)}
             onDeleteMovement={(movement) => setConfirm({ kind: 'movement', movement })}
