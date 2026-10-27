@@ -293,6 +293,7 @@ export function IbitGroupDetail({
           <h3>{editingMovement ? 'Editar movimiento' : `Nuevo movimiento · ${leg.symbol}`}</h3>
           <MovementForm
             key={editingMovement?.id ?? `new-${leg.id}`}
+            assetCurrency={leg.currency}
             initial={editingMovement ?? undefined}
             submitLabel={busy ? 'Guardando…' : editingMovement ? 'Guardar cambios' : 'Guardar movimiento'}
             onSubmit={async (data) => {

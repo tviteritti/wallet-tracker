@@ -1092,6 +1092,7 @@ function AuthenticatedApp({
             <h3>{editingMovement ? 'Editar movimiento' : 'Nuevo movimiento'}</h3>
             <MovementForm
               key={editingMovement?.id ?? 'new-movement'}
+              assetCurrency={selected.currency}
               initial={editingMovement ?? undefined}
               submitLabel={
                 busy
