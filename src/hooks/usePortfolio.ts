@@ -6,6 +6,14 @@ function asNumber(value: unknown): number {
   return Number(value)
 }
 
+function mapAsset(row: Asset): Asset {
+  return {
+    ...row,
+    current_price: asNumber(row.current_price),
+    cedear_ratio: row.cedear_ratio == null ? null : asNumber(row.cedear_ratio),
+  }
+}
+
 function mapGroup(row: AssetGroup): AssetGroup {
   return {
     ...row,
@@ -21,8 +29,8 @@ export function usePortfolio() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true)
     setError(null)
 
     const [assetsRes, groupsRes, movementsRes] = await Promise.all([
@@ -42,7 +50,7 @@ export function usePortfolio() {
       return
     }
 
-    setAssets(assetsRes.data as Asset[])
+    setAssets((assetsRes.data as Asset[]).map(mapAsset))
     setGroups((groupsRes.data as AssetGroup[]).map(mapGroup))
     setMovements(movementsRes.data as Movement[])
     setLoading(false)
@@ -59,6 +67,7 @@ export function usePortfolio() {
       asset_type: data.asset_type,
       currency: data.currency,
       current_price: data.current_price,
+      cedear_ratio: data.asset_type === 'cedear' ? data.cedear_ratio : null,
       notes: data.notes.trim() || null,
     })
     if (insertError) throw insertError
@@ -72,11 +81,28 @@ export function usePortfolio() {
     if (data.asset_type !== undefined) payload.asset_type = data.asset_type
     if (data.currency !== undefined) payload.currency = data.currency
     if (data.current_price !== undefined) payload.current_price = data.current_price
+    if (data.cedear_ratio !== undefined) {
+      payload.cedear_ratio =
+        data.asset_type === 'cedear' || data.asset_type === undefined ? data.cedear_ratio : null
+    }
+    if (data.asset_type !== undefined && data.asset_type !== 'cedear') payload.cedear_ratio = null
     if (data.notes !== undefined) payload.notes = data.notes.trim() || null
 
     const { error: updateError } = await supabase.from('assets').update(payload).eq('id', id)
     if (updateError) throw updateError
     await refresh()
+  }
+
+  const updatePrices = async (updates: { id: string; current_price: number }[]) => {
+    if (updates.length === 0) return
+    const results = await Promise.all(
+      updates.map((update) =>
+        supabase.from('assets').update({ current_price: update.current_price }).eq('id', update.id),
+      ),
+    )
+    const failed = results.find((result) => result.error)
+    if (failed?.error) throw failed.error
+    await refresh({ silent: true })
   }
 
   const deleteAsset = async (id: string) => {
@@ -151,6 +177,7 @@ export function usePortfolio() {
     refresh,
     createAsset,
     updateAsset,
+    updatePrices,
     deleteAsset,
     updateGroup,
     deleteGroup,

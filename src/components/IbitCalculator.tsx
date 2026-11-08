@@ -1,13 +1,23 @@
 import { useState } from 'react'
 import { buildIbitQuote } from '../lib/ibit'
-import { formatMoney, formatPct, pnlClass } from '../lib/portfolio'
+import { useAmounts } from '../lib/privacy'
+import { formatPct, pnlClass } from '../lib/portfolio'
 import type { QuoteVenue } from '../types'
+
+export interface LiveCalcInput {
+  btc: number
+  mepRate: number
+  cclRate: number
+  prices: Partial<Record<QuoteVenue, number>>
+  stamp: string
+}
 
 interface IbitCalculatorProps {
   btcPerShare: number
   cedearRatio: number
   referenceBtcPrice: number
   prices: Partial<Record<QuoteVenue, number>>
+  live: LiveCalcInput | null
   busy: boolean
   onApplyPrice: (venue: QuoteVenue, price: number) => Promise<void>
 }
@@ -54,6 +64,31 @@ function readDraft(): CalcDraft | null {
   }
 }
 
+function withMarket(current: CalcDraft | null, market: LiveCalcInput): CalcDraft {
+  const base: CalcDraft = current ?? {
+    btc: '',
+    mepRate: '',
+    cclRate: '',
+    ars: '',
+    mep: '',
+    ccl: '',
+  }
+  const active = document.activeElement
+  const field = active instanceof HTMLInputElement ? active.dataset.calcField : undefined
+  const next: CalcDraft = { ...base }
+  const fill = (key: keyof CalcDraft, value: number) => {
+    if (field === key || !(value > 0)) return
+    next[key] = String(value)
+  }
+  fill('btc', market.btc)
+  fill('mepRate', market.mepRate)
+  fill('cclRate', market.cclRate)
+  fill('ars', market.prices.ars ?? 0)
+  fill('mep', market.prices.mep ?? 0)
+  fill('ccl', market.prices.ccl ?? 0)
+  return next
+}
+
 function writeDraft(draft: CalcDraft) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
@@ -67,10 +102,22 @@ export function IbitCalculator({
   cedearRatio,
   referenceBtcPrice,
   prices,
+  live,
   busy,
   onApplyPrice,
 }: IbitCalculatorProps) {
+  const { money } = useAmounts()
   const [draft, setDraft] = useState<CalcDraft | null>(() => readDraft())
+  const [seenStamp, setSeenStamp] = useState<string | null>(null)
+  const stamp = live?.stamp ?? null
+  if (stamp !== seenStamp) {
+    setSeenStamp(stamp)
+    if (live?.stamp) {
+      const next = withMarket(draft, live)
+      writeDraft(next)
+      setDraft(next)
+    }
+  }
 
   const fromPortfolio: CalcDraft = {
     btc: referenceBtcPrice > 0 ? String(referenceBtcPrice) : '',
@@ -105,8 +152,8 @@ export function IbitCalculator({
     <div className="ibit-calc">
       <h3>Calculadora contra BTC</h3>
       <p className="muted">
-        Cargá los valores del momento. Mañana o dentro de un mes los cambiás y la cuenta se hace de
-        nuevo: si IBIT está caro o barato respecto de BTC, en pesos, en MEP y en CCL.
+        BTC, MEP, CCL y los tres precios entran solos. Podés corregir un campo a mano: se respeta
+        mientras lo estás editando.
       </p>
 
       <div className="calc-inputs">
@@ -116,6 +163,7 @@ export function IbitCalculator({
             type="number"
             step="any"
             min="0"
+            data-calc-field="btc"
             value={shown.btc}
             onChange={(event) => update({ btc: event.target.value })}
           />
@@ -126,6 +174,7 @@ export function IbitCalculator({
             type="number"
             step="any"
             min="0"
+            data-calc-field="mepRate"
             value={shown.mepRate}
             placeholder="Ej. 1617"
             onChange={(event) => update({ mepRate: event.target.value })}
@@ -137,6 +186,7 @@ export function IbitCalculator({
             type="number"
             step="any"
             min="0"
+            data-calc-field="cclRate"
             value={shown.cclRate}
             placeholder="Ej. 1651"
             onChange={(event) => update({ cclRate: event.target.value })}
@@ -146,9 +196,9 @@ export function IbitCalculator({
 
       {quote ? (
         <p className="calc-fair">
-          Con ese BTC, el CEDEAR debería valer {formatMoney(quote.cedearUsd, 'USD')}.
-          {quote.viaMep ? ` En pesos, con tu MEP: ${formatMoney(quote.viaMep.fairArs, 'ARS')}.` : ' Falta el dólar MEP para el precio en pesos.'}
-          {quote.viaCcl ? ` Con tu CCL: ${formatMoney(quote.viaCcl.fairArs, 'ARS')}.` : ' Falta el dólar CCL para el otro precio en pesos.'}
+          Con ese BTC, el CEDEAR debería valer {money(quote.cedearUsd, 'USD')}.
+          {quote.viaMep ? ` En pesos, con tu MEP: ${money(quote.viaMep.fairArs, 'ARS')}.` : ' Falta el dólar MEP para el precio en pesos.'}
+          {quote.viaCcl ? ` Con tu CCL: ${money(quote.viaCcl.fairArs, 'ARS')}.` : ' Falta el dólar CCL para el otro precio en pesos.'}
         </p>
       ) : (
         <p className="empty">Ingresá el precio de BTC.</p>
@@ -169,6 +219,7 @@ export function IbitCalculator({
                   type="number"
                   step="any"
                   min="0"
+                  data-calc-field={field.key}
                   value={shown[field.key]}
                   placeholder="Precio del broker"
                   onChange={(event) => update({ [field.key]: event.target.value })}
@@ -179,9 +230,9 @@ export function IbitCalculator({
                   <PesoReadout quote={quote} />
                 ) : usd?.impliedBtc != null && usd.gapPct != null ? (
                   <>
-                    <span className="label">Debería valer {formatMoney(usd.fairUsd, 'USD')}</span>
+                    <span className="label">Debería valer {money(usd.fairUsd, 'USD')}</span>
                     <strong className={pnlClass(-usd.gapPct)}>
-                      Equivale a BTC {formatMoney(usd.impliedBtc, 'USD')}, {correlationText(usd.gapPct)}
+                      Equivale a BTC {money(usd.impliedBtc, 'USD')}, {correlationText(usd.gapPct)}
                     </strong>
                   </>
                 ) : (
@@ -224,17 +275,18 @@ function PesoReadout({ quote }: { quote: ReturnType<typeof buildIbitQuote> }) {
 }
 
 function PesoLine({ name, check }: { name: string; check: NonNullable<IbitQuotePeso> }) {
+  const { money } = useAmounts()
   return (
     <p className="peso-line">
       <span className="label">
-        Con dólar {name}: debería valer {formatMoney(check.fairArs, 'ARS')}
+        Con dólar {name}: debería valer {money(check.fairArs, 'ARS')}
         {check.versusUsdVenuePct != null
           ? `. Contra la plaza ${name}, ${plazaText(check.versusUsdVenuePct)}`
           : ''}
       </span>
       {check.impliedBtc != null && check.gapPct != null ? (
         <strong className={pnlClass(-check.gapPct)}>
-          Equivale a BTC {formatMoney(check.impliedBtc, 'USD')}, {correlationText(check.gapPct)}
+          Equivale a BTC {money(check.impliedBtc, 'USD')}, {correlationText(check.gapPct)}
         </strong>
       ) : null}
     </p>

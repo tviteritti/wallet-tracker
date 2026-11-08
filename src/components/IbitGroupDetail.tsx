@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { IbitCalculator } from './IbitCalculator'
+import { IbitCalculator, type LiveCalcInput } from './IbitCalculator'
 import { MovementList } from './AssetCard'
 import { MovementForm } from './MovementForm'
 import { VENUE_LABELS, VENUE_SHORT, isQuoteVenue, pricesFromLegs } from '../lib/ibit'
+import { useAmounts } from '../lib/privacy'
+import { quoteBasisText, quoteTag, type DollarRates, type QuotedPrice } from '../lib/market'
 import {
   displayAmount,
   formatMoney,
   formatPct,
-  formatQty,
   pctOf,
   pnlClass,
 } from '../lib/portfolio'
@@ -29,6 +30,12 @@ interface IbitGroupDetailProps {
   displayCurrency: CurrencyCode
   usdArsRate: number
   referenceBtcPrice: number
+  quoteFeed: {
+    btcUsd: number | null
+    fx: DollarRates | null
+    prices: Record<string, QuotedPrice>
+    stamp: string
+  } | null
   busy: boolean
   run: (action: () => Promise<void>, fallback: string) => Promise<void>
   onUpdateAsset: (id: string, data: { current_price: number }) => Promise<void>
@@ -38,10 +45,21 @@ interface IbitGroupDetailProps {
   onDeleteGroup: () => void
 }
 
-const PRICE_LABEL: Record<QuoteVenue, string> = {
-  ars: 'Precio actual (manual, pesos)',
-  mep: 'Precio actual (manual, USD MEP)',
-  ccl: 'Precio actual (manual, USD CCL)',
+function venuePriceLabel(venue: QuoteVenue, quote: QuotedPrice | undefined): string {
+  const origin = quoteTag(quote)
+  if (venue === 'ars') return `Precio actual (${origin}, pesos)`
+  if (venue === 'mep') return `Precio actual (${origin}, USD MEP)`
+  return `Precio actual (${origin}, USD CCL)`
+}
+
+function quotedLegPrice(
+  legs: Asset[],
+  prices: Record<string, QuotedPrice>,
+  venue: QuoteVenue,
+): number {
+  const leg = legs.find((item) => item.venue === venue)
+  if (!leg) return 0
+  return prices[leg.id]?.price ?? Number(leg.current_price)
 }
 
 export function IbitGroupDetail({
@@ -52,6 +70,7 @@ export function IbitGroupDetail({
   displayCurrency,
   usdArsRate,
   referenceBtcPrice,
+  quoteFeed,
   busy,
   run,
   onUpdateAsset,
@@ -64,8 +83,22 @@ export function IbitGroupDetail({
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState('')
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null)
+  const { money, qty } = useAmounts()
 
   const leg = legs.find((item) => item.venue === venue) ?? legs[0] ?? null
+  const live: LiveCalcInput | null = quoteFeed
+    ? {
+        btc: quoteFeed.btcUsd ?? referenceBtcPrice,
+        mepRate: quoteFeed.fx?.mep ?? 0,
+        cclRate: quoteFeed.fx?.ccl ?? 0,
+        prices: {
+          ars: quotedLegPrice(legs, quoteFeed.prices, 'ars'),
+          mep: quotedLegPrice(legs, quoteFeed.prices, 'mep'),
+          ccl: quotedLegPrice(legs, quoteFeed.prices, 'ccl'),
+        },
+        stamp: quoteFeed.stamp,
+      }
+    : null
   const position = leg ? positions.get(leg.id) : null
   const legMovements = leg ? movements.filter((item) => item.asset_id === leg.id) : []
 
@@ -85,7 +118,7 @@ export function IbitGroupDetail({
   }
 
   function showAmount(native: number, usd: number | null, currency: CurrencyCode) {
-    return formatMoney(displayAmount(native, usd, currency, displayCurrency, usdArsRate), displayCurrency)
+    return money(displayAmount(native, usd, currency, displayCurrency, usdArsRate), displayCurrency)
   }
 
   return (
@@ -110,22 +143,22 @@ export function IbitGroupDetail({
         <div className="detail-metrics">
           <div>
             <span className="label">CEDEARs totales</span>
-            <strong>{formatQty(quantity)}</strong>
+            <strong>{qty(quantity)}</strong>
           </div>
           <div>
             <span className="label">Valor combinado</span>
-            <strong>{formatMoney(market, displayCurrency)}</strong>
+            <strong>{money(market, displayCurrency)}</strong>
           </div>
           <div>
             <span className="label">P&L no realizado</span>
             <strong className={pnlClass(unrealized)}>
-              {formatMoney(unrealized, displayCurrency)} ({formatPct(pctOf(unrealized, invested))})
+              {money(unrealized, displayCurrency)} ({formatPct(pctOf(unrealized, invested))})
             </strong>
           </div>
           <div>
             <span className="label">P&L total</span>
             <strong className={pnlClass(total)}>
-              {formatMoney(total, displayCurrency)} ({formatPct(pctOf(total, invested))})
+              {money(total, displayCurrency)} ({formatPct(pctOf(total, invested))})
             </strong>
           </div>
         </div>
@@ -137,6 +170,7 @@ export function IbitGroupDetail({
           cedearRatio={Number(group.cedear_ratio)}
           referenceBtcPrice={referenceBtcPrice}
           prices={pricesFromLegs(legs)}
+          live={live}
           busy={busy}
           onApplyPrice={(nextVenue, price) => {
             const target = legs.find((item) => item.venue === nextVenue)
@@ -182,7 +216,7 @@ export function IbitGroupDetail({
             <div className="detail-metrics">
               <div>
                 <span className="label">Cantidad</span>
-                <strong>{formatQty(position.quantity)}</strong>
+                <strong>{qty(position.quantity)}</strong>
               </div>
               <div>
                 <span className="label">Valor de mercado</span>
@@ -236,7 +270,14 @@ export function IbitGroupDetail({
 
             <div className="price-box">
               <div>
-                <span className="label">{isQuoteVenue(leg.venue) ? PRICE_LABEL[leg.venue] : 'Precio actual'}</span>
+                <span className="label">
+                  {isQuoteVenue(leg.venue)
+                    ? venuePriceLabel(leg.venue, quoteFeed?.prices[leg.id])
+                    : `Precio actual (${quoteTag(quoteFeed?.prices[leg.id])})`}
+                </span>
+                {quoteBasisText(quoteFeed?.prices[leg.id]) ? (
+                  <span className="muted">{quoteBasisText(quoteFeed?.prices[leg.id])}</span>
+                ) : null}
                 {editingPrice ? (
                   <div className="inline-edit">
                     <input

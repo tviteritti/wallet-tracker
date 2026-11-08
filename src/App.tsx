@@ -1,19 +1,26 @@
 import { useMemo, useState } from 'react'
 import { AllocationChart, type ChartSlice } from './components/AllocationChart'
+import { SpyCompare } from './components/SpyCompare'
 import { AssetCard, MovementList } from './components/AssetCard'
 import { AssetForm } from './components/AssetForm'
 import { AssetGroupCard } from './components/AssetGroupCard'
 import { FxRatesPanel } from './components/FxRatesPanel'
 import { IbitGroupDetail } from './components/IbitGroupDetail'
-import { LoginForm } from './components/LoginForm'
+import { LoginForm, NewPasswordForm } from './components/LoginForm'
 import { Modal } from './components/Modal'
 import { MovementForm } from './components/MovementForm'
 import { useAuth } from './hooks/useAuth'
 import { useDailyFxRates } from './hooks/useDailyFxRates'
+import { useLiveQuotes } from './hooks/useLiveQuotes'
 import { usePortfolio } from './hooks/usePortfolio'
 import { useSettings } from './hooks/useSettings'
+import { useReturnLines } from './hooks/useReturnLines'
+import { useSpyHistory } from './hooks/useSpyHistory'
 import { useTheme } from './hooks/useTheme'
 import { sortByVenue } from './lib/ibit'
+import { EyeIcon, PrivacyProvider, useAmounts } from './lib/privacy'
+import { compareToSpy, portfolioUsdOf } from './lib/spy'
+import { quoteBasisText, quoteTag } from './lib/market'
 import {
   computePosition,
   displayAmount,
@@ -32,7 +39,7 @@ import type {
 } from './types'
 import { ASSET_TYPE_LABELS, CURRENCIES } from './types'
 
-type View = 'list' | 'create' | 'detail' | 'group' | 'fx'
+type View = 'list' | 'create' | 'detail' | 'group' | 'fx' | 'compare'
 type TypeFilter = 'all' | AssetType
 type SortMode = 'invested_desc' | 'invested_asc' | 'name'
 
@@ -44,7 +51,8 @@ type ConfirmState =
 
 export default function App() {
   const { theme, toggleTheme } = useTheme()
-  const { session, loading: authLoading, signIn, signOut } = useAuth()
+  const { session, loading: authLoading, needsPassword, signIn, signOut, requestPasswordReset, updatePassword } =
+    useAuth()
 
   if (authLoading) {
     return (
@@ -54,7 +62,7 @@ export default function App() {
     )
   }
 
-  if (!session) {
+  if (needsPassword || !session) {
     return (
       <>
         <button
@@ -65,18 +73,24 @@ export default function App() {
         >
           {theme === 'light' ? 'Modo noche' : 'Modo día'}
         </button>
-        <LoginForm onSubmit={signIn} />
+        {needsPassword ? (
+          <NewPasswordForm onSubmit={updatePassword} />
+        ) : (
+          <LoginForm onSubmit={signIn} onReset={requestPasswordReset} />
+        )}
       </>
     )
   }
 
   return (
-    <AuthenticatedApp
-      email={session.user.email ?? ''}
-      onSignOut={signOut}
-      theme={theme}
-      onToggleTheme={toggleTheme}
-    />
+    <PrivacyProvider>
+      <AuthenticatedApp
+        email={session.user.email ?? ''}
+        onSignOut={signOut}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
+    </PrivacyProvider>
   )
 }
 
@@ -99,12 +113,14 @@ function AuthenticatedApp({
     groups,
     createAsset,
     updateAsset,
+    updatePrices,
     deleteAsset,
     deleteGroup,
     createMovement,
     updateMovement,
     deleteMovement,
   } = usePortfolio()
+  const { money, qty, hidden, toggle } = useAmounts()
 
   const { usdArsRate, error: settingsError, updateUsdArsRate } = useSettings()
   const {
@@ -114,8 +130,15 @@ function AuthenticatedApp({
     upsertRate,
     deleteRate,
   } = useDailyFxRates()
-
+  const spyHistory = useSpyHistory(true)
   const [view, setView] = useState<View>('list')
+  const returnLines = useReturnLines(view === 'compare', {
+    assets,
+    groups,
+    movements,
+    rateMap,
+    spy: spyHistory.closes,
+  })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [editingAsset, setEditingAsset] = useState(false)
@@ -131,6 +154,16 @@ function AuthenticatedApp({
   const [sortMode, setSortMode] = useState<SortMode>('invested_desc')
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [chartFocus, setChartFocus] = useState<AssetType | null>(null)
+  const [rateLocked, setRateLocked] = useState(false)
+  const quotes = useLiveQuotes({
+    assets,
+    groups,
+    ready: !loading,
+    usdArsRate,
+    freezeRate: rateLocked,
+    savePrices: updatePrices,
+    saveUsdArs: updateUsdArsRate,
+  })
 
   const TYPE_COLORS: Record<AssetType, string> = {
     crypto: '#1f6b63',
@@ -176,6 +209,18 @@ function AuthenticatedApp({
     }
     return map
   }, [assets, movements, rateMap, usdArsRate])
+
+  const spyComparison = useMemo(() => {
+    const portfolio = portfolioUsdOf(assets, positions)
+    return compareToSpy({
+      assets,
+      movements,
+      rateMap,
+      closes: spyHistory.closes,
+      portfolioUsd: portfolio.usd,
+      portfolioComplete: portfolio.complete,
+    })
+  }, [assets, movements, rateMap, positions, spyHistory.closes])
 
   const filteredAssets = useMemo(
     () =>
@@ -457,6 +502,7 @@ function AuthenticatedApp({
     setFormError(null)
     try {
       await updateUsdArsRate(Number(rateDraft))
+      setRateLocked(true)
       setEditingRate(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'No se pudo guardar el tipo de cambio')
@@ -529,8 +575,20 @@ function AuthenticatedApp({
           <p className="muted session-email">{email}</p>
         </div>
         <div className="topbar-actions">
+          <button
+            type="button"
+            className="btn ghost icon"
+            onClick={toggle}
+            aria-pressed={hidden}
+            aria-label={hidden ? 'Mostrar montos' : 'Ocultar montos'}
+          >
+            <EyeIcon off={hidden} />
+          </button>
           <button type="button" className="btn ghost" onClick={onToggleTheme}>
             {theme === 'light' ? 'Modo noche' : 'Modo día'}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => setView('compare')}>
+            Comparar
           </button>
           <button type="button" className="btn ghost" onClick={() => setView('fx')}>
             TC diarios
@@ -555,6 +613,35 @@ function AuthenticatedApp({
       {settingsError ? <div className="banner error">{settingsError}</div> : null}
       {fxError ? <div className="banner error">{fxError}</div> : null}
       {formError ? <div className="banner error">{formError}</div> : null}
+      {quotes.error ? <div className="banner warn">{quotes.error}</div> : null}
+
+      <div className="quote-status">
+        <p className="muted">
+          {quotes.updatedAt
+            ? `Cotizaciones ${quotes.updatedAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+            : 'Cotizaciones en vivo'}
+          {quotes.fx
+            ? ` · MEP ${formatQty(quotes.fx.mep)} · CCL ${formatQty(quotes.fx.ccl)}`
+            : ''}
+          {quotes.updatedAt ? ' · se actualizan solas' : ''}
+          {Object.values(quotes.prices).some((quote) => quote.source === 'Bonos') ? (
+            <>
+              {' · Bonos: '}
+              <a href="https://compararfondos.com.ar" target="_blank" rel="noreferrer">
+                compararfondos.com.ar
+              </a>
+            </>
+          ) : null}
+        </p>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={quotes.refreshing}
+          onClick={() => quotes.refresh()}
+        >
+          {quotes.refreshing ? 'Actualizando…' : 'Actualizar ahora'}
+        </button>
+      </div>
 
       {view === 'fx' ? (
         <FxRatesPanel
@@ -584,6 +671,17 @@ function AuthenticatedApp({
               setBusy(false)
             }
           }}
+        />
+      ) : null}
+
+      {view === 'compare' ? (
+        <SpyCompare
+          comparison={spyComparison}
+          status={spyHistory.status}
+          error={spyHistory.error}
+          lines={returnLines.lines}
+          linesStatus={returnLines.status}
+          linesError={returnLines.error}
         />
       ) : null}
 
@@ -629,7 +727,7 @@ function AuthenticatedApp({
             </label>
 
             <div className="control-field rate-field">
-              <span>1 USD =</span>
+              <span>1 USD ({rateLocked ? 'manual' : 'MEP'}) =</span>
               {editingRate ? (
                 <div className="inline-edit">
                   <input
@@ -666,6 +764,18 @@ function AuthenticatedApp({
                   >
                     Actualizar TC
                   </button>
+                  {rateLocked ? (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => {
+                        setRateLocked(false)
+                        quotes.refresh()
+                      }}
+                    >
+                      Usar MEP
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>
@@ -674,28 +784,28 @@ function AuthenticatedApp({
           <section className="summary-strip summary-strip-wide">
             <div>
               <span className="label">Valor de mercado</span>
-              <strong>{formatMoney(totals.marketValue, displayCurrency)}</strong>
+              <strong>{money(totals.marketValue, displayCurrency)}</strong>
             </div>
             <div>
               <span className="label">Costo</span>
-              <strong>{formatMoney(totals.costBasis, displayCurrency)}</strong>
+              <strong>{money(totals.costBasis, displayCurrency)}</strong>
             </div>
             <div>
               <span className="label">P&L no realizado</span>
               <strong className={pnlClass(totals.unrealizedPnL)}>
-                {formatMoney(totals.unrealizedPnL, displayCurrency)} ({formatPct(totals.unrealizedPct)})
+                {money(totals.unrealizedPnL, displayCurrency)} ({formatPct(totals.unrealizedPct)})
               </strong>
             </div>
             <div>
               <span className="label">P&L realizado</span>
               <strong className={pnlClass(totals.realizedPnL)}>
-                {formatMoney(totals.realizedPnL, displayCurrency)} ({formatPct(totals.realizedPct)})
+                {money(totals.realizedPnL, displayCurrency)} ({formatPct(totals.realizedPct)})
               </strong>
             </div>
             <div>
               <span className="label">P&L total</span>
               <strong className={pnlClass(totals.totalPnL)}>
-                {formatMoney(totals.totalPnL, displayCurrency)} ({formatPct(totals.totalPct)})
+                {money(totals.totalPnL, displayCurrency)} ({formatPct(totals.totalPct)})
               </strong>
             </div>
           </section>
@@ -765,6 +875,7 @@ function AuthenticatedApp({
                     positions={positions}
                     displayCurrency={displayCurrency}
                     usdArsRate={usdArsRate}
+                    quotes={quotes.prices}
                     onSelect={() => openGroup(item.group.id)}
                   />
                 ) : (
@@ -774,6 +885,7 @@ function AuthenticatedApp({
                     position={positions.get(item.asset.id)!}
                     displayCurrency={displayCurrency}
                     usdArsRate={usdArsRate}
+                    quote={quotes.prices[item.asset.id]}
                     selected={selectedId === item.asset.id}
                     onSelect={() => {
                       setSelectedId(item.asset.id)
@@ -841,7 +953,7 @@ function AuthenticatedApp({
                   {ASSET_TYPE_LABELS[selected.asset_type]} · nativo {selected.currency} · Precio
                   promedio:{' '}
                   {selectedPosition.quantity > 0
-                    ? formatMoney(
+                    ? money(
                         displayAmount(
                           selectedPosition.avgCost,
                           selected.currency === 'USD'
@@ -889,6 +1001,7 @@ function AuthenticatedApp({
                   asset_type: selected.asset_type,
                   currency: selected.currency,
                   current_price: Number(selected.current_price),
+                  cedear_ratio: selected.cedear_ratio,
                   notes: selected.notes ?? '',
                 }}
                 submitLabel={busy ? 'Guardando…' : 'Guardar cambios'}
@@ -900,12 +1013,12 @@ function AuthenticatedApp({
                 <div className="detail-metrics">
                   <div>
                     <span className="label">Cantidad</span>
-                    <strong>{formatQty(selectedPosition.quantity)}</strong>
+                    <strong>{qty(selectedPosition.quantity)}</strong>
                   </div>
                   <div>
                     <span className="label">Valor de mercado</span>
                     <strong>
-                      {formatMoney(
+                      {money(
                         displayAmount(
                           selectedPosition.marketValue,
                           selectedPosition.marketValueUsd,
@@ -920,7 +1033,7 @@ function AuthenticatedApp({
                   <div>
                     <span className="label">Costo</span>
                     <strong>
-                      {formatMoney(
+                      {money(
                         displayAmount(
                           selectedPosition.costBasis,
                           selectedPosition.costBasisUsd,
@@ -960,7 +1073,7 @@ function AuthenticatedApp({
                           displayCurrency,
                           usdArsRate,
                         )
-                        return `${formatMoney(unrealized, displayCurrency)} (${formatPct(pctOf(unrealized, invested))})`
+                        return `${money(unrealized, displayCurrency)} (${formatPct(pctOf(unrealized, invested))})`
                       })()}
                     </strong>
                   </div>
@@ -992,7 +1105,7 @@ function AuthenticatedApp({
                           displayCurrency,
                           usdArsRate,
                         )
-                        return `${formatMoney(realized, displayCurrency)} (${formatPct(pctOf(realized, realizedCost))})`
+                        return `${money(realized, displayCurrency)} (${formatPct(pctOf(realized, realizedCost))})`
                       })()}
                     </strong>
                   </div>
@@ -1031,7 +1144,7 @@ function AuthenticatedApp({
                           displayCurrency,
                           usdArsRate,
                         )
-                        return `${formatMoney(total, displayCurrency)} (${formatPct(pctOf(total, invested + realizedCost))})`
+                        return `${money(total, displayCurrency)} (${formatPct(pctOf(total, invested + realizedCost))})`
                       })()}
                     </strong>
                   </div>
@@ -1039,7 +1152,12 @@ function AuthenticatedApp({
 
                 <div className="price-box">
                   <div>
-                    <span className="label">Precio actual (manual, {selected.currency})</span>
+                    <span className="label">
+                      Precio actual ({quoteTag(quotes.prices[selected.id])}, {selected.currency})
+                    </span>
+                    {quoteBasisText(quotes.prices[selected.id]) ? (
+                      <span className="muted">{quoteBasisText(quotes.prices[selected.id])}</span>
+                    ) : null}
                     {editingPrice ? (
                       <div className="inline-edit">
                         <input
@@ -1147,6 +1265,16 @@ function AuthenticatedApp({
             displayCurrency={displayCurrency}
             usdArsRate={usdArsRate}
             referenceBtcPrice={referenceBtcPrice}
+            quoteFeed={
+              quotes.updatedAt
+                ? {
+                    btcUsd: quotes.btcUsd,
+                    fx: quotes.fx,
+                    prices: quotes.prices,
+                    stamp: quotes.updatedAt.toISOString(),
+                  }
+                : null
+            }
             busy={busy}
             run={run}
             onUpdateAsset={(id, data) => updateAsset(id, data)}

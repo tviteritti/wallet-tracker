@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { AssetFormData, AssetType, CurrencyCode } from '../types'
 import { ASSET_TYPE_LABELS, CURRENCIES, CURRENCY_LABELS } from '../types'
 
@@ -15,11 +15,13 @@ const empty: AssetFormData = {
   asset_type: 'crypto',
   currency: 'USD',
   current_price: 0,
+  cedear_ratio: null,
   notes: '',
 }
 
 export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFormProps) {
   const values: AssetFormData = { ...empty, ...initial }
+  const [assetType, setAssetType] = useState<AssetType>(values.asset_type)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -27,9 +29,13 @@ export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFor
     await onSubmit({
       name: String(form.get('name') ?? ''),
       symbol: String(form.get('symbol') ?? ''),
-      asset_type: String(form.get('asset_type') ?? 'other') as AssetType,
+      asset_type: assetType,
       currency: String(form.get('currency') ?? 'USD') as CurrencyCode,
       current_price: Number(form.get('current_price') ?? 0),
+      cedear_ratio:
+        assetType === 'cedear' && Number(form.get('cedear_ratio')) > 0
+          ? Number(form.get('cedear_ratio'))
+          : null,
       notes: String(form.get('notes') ?? ''),
     })
   }
@@ -47,7 +53,11 @@ export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFor
         </label>
         <label>
           Tipo
-          <select name="asset_type" defaultValue={values.asset_type}>
+          <select
+            name="asset_type"
+            value={assetType}
+            onChange={(event) => setAssetType(event.target.value as AssetType)}
+          >
             {(Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((type) => (
               <option key={type} value={type}>
                 {ASSET_TYPE_LABELS[type]}
@@ -65,6 +75,20 @@ export function AssetForm({ initial, submitLabel, onSubmit, onCancel }: AssetFor
             ))}
           </select>
         </label>
+        {assetType === 'cedear' ? (
+          <label className="span-2">
+            Ratio
+            <input
+              name="cedear_ratio"
+              type="number"
+              step="any"
+              min="0"
+              defaultValue={values.cedear_ratio ?? ''}
+              placeholder="Cuántos CEDEARs equivalen a una acción"
+            />
+            <span className="muted">Precio en pesos = acción en USD × CCL / ratio.</span>
+          </label>
+        ) : null}
         <label className="span-2">
           Precio actual (manual)
           <input

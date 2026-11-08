@@ -11,6 +11,7 @@ export interface Asset {
   asset_type: AssetType
   currency: CurrencyCode
   current_price: number
+  cedear_ratio: number | null
   notes: string | null
   group_id: string | null
   venue: QuoteVenue | null
@@ -47,6 +48,7 @@ export interface AssetFormData {
   asset_type: AssetType
   currency: CurrencyCode
   current_price: number
+  cedear_ratio: number | null
   notes: string
 }
 

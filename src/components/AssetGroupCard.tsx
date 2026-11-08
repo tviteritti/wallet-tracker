@@ -1,9 +1,10 @@
 import { VENUE_SHORT } from '../lib/ibit'
+import { useAmounts } from '../lib/privacy'
+import { quoteShort, type QuotedPrice } from '../lib/market'
 import {
   displayAmount,
   formatMoney,
   formatPct,
-  formatQty,
   pctOf,
   pnlClass,
 } from '../lib/portfolio'
@@ -15,6 +16,7 @@ interface AssetGroupCardProps {
   positions: Map<string, PositionSummary>
   displayCurrency: CurrencyCode
   usdArsRate: number
+  quotes: Record<string, QuotedPrice>
   onSelect: () => void
 }
 
@@ -24,8 +26,10 @@ export function AssetGroupCard({
   positions,
   displayCurrency,
   usdArsRate,
+  quotes = {},
   onSelect,
 }: AssetGroupCardProps) {
+  const { money, qty } = useAmounts()
   let market = 0
   let invested = 0
   let total = 0
@@ -65,7 +69,16 @@ export function AssetGroupCard({
           <strong>{group.name}</strong>
           <span className="muted">CEDEAR iShares Bitcoin Trust</span>
         </div>
-        <span className="chip">CEDEAR · {legs.length} plazas</span>
+        <span className="chip-row">
+          <span className="chip">CEDEAR · {legs.length} plazas</span>
+          <span className={`chip ${legs.some((leg) => quotes[leg.id]) ? 'chip-live' : 'chip-manual'}`}>
+            {legs.every((leg) => quotes[leg.id])
+              ? 'API'
+              : legs.some((leg) => quotes[leg.id])
+                ? 'API · parcial'
+                : 'Manual'}
+          </span>
+        </span>
       </div>
 
       <ul className="group-legs">
@@ -84,13 +97,18 @@ export function AssetGroupCard({
           const hasPosition = (position?.quantity ?? 0) > 0
           return (
             <li key={leg.id}>
-              <span>
-                {leg.venue ? VENUE_SHORT[leg.venue] : leg.symbol} · {leg.symbol}
+              <span className="group-leg-name">
+                <span>
+                  {leg.venue ? VENUE_SHORT[leg.venue] : leg.symbol} · {leg.symbol}
+                </span>
+                <span className={`chip ${quotes[leg.id] ? 'chip-live' : 'chip-manual'}`}>
+                  {quoteShort(quotes[leg.id])}
+                </span>
               </span>
               <span>{price > 0 ? formatMoney(price, leg.currency) : 'Sin precio'}</span>
-              <span>{hasPosition ? formatQty(position!.quantity) : '—'}</span>
+              <span>{hasPosition ? qty(position!.quantity) : '—'}</span>
               <span className={hasPosition ? pnlClass(pnl) : 'muted'}>
-                {hasPosition ? formatMoney(pnl, displayCurrency) : '—'}
+                {hasPosition ? money(pnl, displayCurrency) : '—'}
               </span>
             </li>
           )
@@ -100,17 +118,17 @@ export function AssetGroupCard({
       <div className="asset-card-metrics">
         <div>
           <span className="label">CEDEARs totales</span>
-          <span>{quantity > 0 ? formatQty(quantity) : '—'}</span>
+          <span>{quantity > 0 ? qty(quantity) : '—'}</span>
         </div>
         <div>
           <span className="label">Valor combinado</span>
-          <span>{quantity > 0 ? formatMoney(market, displayCurrency) : '—'}</span>
+          <span>{quantity > 0 ? money(market, displayCurrency) : '—'}</span>
         </div>
         <div>
           <span className="label">P&L total</span>
           <span className={quantity > 0 ? pnlClass(total) : ''}>
             {quantity > 0
-              ? `${formatMoney(total, displayCurrency)} (${formatPct(pctOf(total, invested))})`
+              ? `${money(total, displayCurrency)} (${formatPct(pctOf(total, invested))})`
               : '—'}
           </span>
         </div>

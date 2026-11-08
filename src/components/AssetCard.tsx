@@ -1,10 +1,11 @@
+import { quoteTag, type QuotedPrice } from '../lib/market'
+import { useAmounts } from '../lib/privacy'
 import type { Asset, CurrencyCode, Movement, PositionSummary } from '../types'
 import { ASSET_TYPE_LABELS } from '../types'
 import {
   displayAmount,
   formatMoney,
   formatPct,
-  formatQty,
   pctOf,
   pnlClass,
 } from '../lib/portfolio'
@@ -14,6 +15,7 @@ interface AssetCardProps {
   position: PositionSummary
   displayCurrency: CurrencyCode
   usdArsRate: number
+  quote?: QuotedPrice
   selected: boolean
   onSelect: () => void
 }
@@ -23,9 +25,11 @@ export function AssetCard({
   position,
   displayCurrency,
   usdArsRate,
+  quote,
   selected,
   onSelect,
 }: AssetCardProps) {
+  const { money, qty } = useAmounts()
   const hasPosition = position.quantity > 0
   const price = displayAmount(
     Number(asset.current_price),
@@ -94,7 +98,10 @@ export function AssetCard({
           <strong>{asset.symbol}</strong>
           <span className="muted">{asset.name}</span>
         </div>
-        <span className="chip">{ASSET_TYPE_LABELS[asset.asset_type]} · {asset.currency}</span>
+        <span className="chip-row">
+          <span className="chip">{ASSET_TYPE_LABELS[asset.asset_type]} · {asset.currency}</span>
+          <span className={`chip ${quote ? 'chip-live' : 'chip-manual'}`}>{quoteTag(quote)}</span>
+        </span>
       </div>
 
       <div className="asset-card-metrics">
@@ -104,34 +111,34 @@ export function AssetCard({
         </div>
         <div>
           <span className="label">Cantidad</span>
-          <span>{hasPosition ? formatQty(position.quantity) : '—'}</span>
+          <span>{hasPosition ? qty(position.quantity) : '—'}</span>
         </div>
         <div>
           <span className="label">Valor de mercado</span>
-          <span>{hasPosition ? formatMoney(marketValue, displayCurrency) : '—'}</span>
+          <span>{hasPosition ? money(marketValue, displayCurrency) : '—'}</span>
         </div>
         <div>
           <span className="label">Invertido</span>
-          <span>{hasPosition ? formatMoney(invested, displayCurrency) : '—'}</span>
+          <span>{hasPosition ? money(invested, displayCurrency) : '—'}</span>
         </div>
         <div>
           <span className="label">P&L no realizado</span>
           <span className={hasPosition ? pnlClass(unrealized) : ''}>
             {hasPosition
-              ? `${formatMoney(unrealized, displayCurrency)} (${formatPct(unrealizedPct)})`
+              ? `${money(unrealized, displayCurrency)} (${formatPct(unrealizedPct)})`
               : '—'}
           </span>
         </div>
         <div>
           <span className="label">P&L realizado</span>
           <span className={pnlClass(realized)}>
-            {formatMoney(realized, displayCurrency)} ({formatPct(realizedPct)})
+            {money(realized, displayCurrency)} ({formatPct(realizedPct)})
           </span>
         </div>
         <div>
           <span className="label">P&L total</span>
           <span className={pnlClass(total)}>
-            {formatMoney(total, displayCurrency)} ({formatPct(totalPct)})
+            {money(total, displayCurrency)} ({formatPct(totalPct)})
           </span>
         </div>
         {position.missingFxDates.length > 0 ? (
@@ -153,6 +160,7 @@ interface MovementListProps {
 }
 
 export function MovementList({ movements, currency, onEdit, onDelete }: MovementListProps) {
+  const { money, qty } = useAmounts()
   if (movements.length === 0) {
     return <p className="empty">Todavía no hay compras ni ventas para este activo.</p>
   }
@@ -171,8 +179,8 @@ export function MovementList({ movements, currency, onEdit, onDelete }: Movement
           </div>
           <div className="movement-meta">
             <span>
-              {formatQty(Number(movement.quantity))} @{' '}
-              {formatMoney(Number(movement.price_per_unit), currency)}
+              {qty(Number(movement.quantity))} @{' '}
+              {money(Number(movement.price_per_unit), currency)}
             </span>
             <button type="button" className="btn ghost" onClick={() => onEdit(movement)}>
               Editar

@@ -21,6 +21,7 @@ create table public.assets (
   asset_type public.asset_type not null default 'other',
   currency text not null default 'USD' check (currency in ('USD', 'ARS')),
   current_price numeric(20, 8) not null default 0,
+  cedear_ratio numeric(20, 8) check (cedear_ratio is null or cedear_ratio > 0),
   notes text,
   group_id uuid references public.asset_groups(id) on delete cascade,
   venue text check (venue is null or venue in ('ars', 'mep', 'ccl')),

@@ -1,4 +1,5 @@
-import { formatMoney, formatPct } from '../lib/portfolio'
+import { formatPct } from '../lib/portfolio'
+import { useAmounts } from '../lib/privacy'
 import type { CurrencyCode } from '../types'
 
 export interface ChartSlice {
@@ -41,6 +42,7 @@ export function AllocationChart({
   onBack,
   backLabel = 'Volver a tipos',
 }: AllocationChartProps) {
+  const { money } = useAmounts()
   const visible = slices.filter((slice) => slice.value > 0)
 
   if (visible.length === 0) {
@@ -85,7 +87,7 @@ export function AllocationChart({
               onClick={() => onSliceClick?.(slice.id)}
             >
               <title>
-                {slice.label}: {formatMoney(slice.value, currency)} ({formatPct(slice.pct)})
+                {slice.label}: {money(slice.value, currency)} ({formatPct(slice.pct)})
               </title>
             </path>
           ))}
@@ -104,7 +106,7 @@ export function AllocationChart({
                 <div>
                   <strong>{slice.label}</strong>
                   <span className="muted">
-                    {formatMoney(slice.value, currency)} · {formatPct(slice.pct)}
+                    {money(slice.value, currency)} · {formatPct(slice.pct)}
                   </span>
                 </div>
               </button>

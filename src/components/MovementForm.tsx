@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { convertAmount, formatMoney } from '../lib/portfolio'
+import { useAmounts } from '../lib/privacy'
+import { convertAmount } from '../lib/portfolio'
 import type { CurrencyCode, Movement, MovementFormData, MovementType } from '../types'
 import { CURRENCIES } from '../types'
 
@@ -38,6 +39,7 @@ export function MovementForm({
   onSubmit,
   onCancel,
 }: MovementFormProps) {
+  const { money } = useAmounts()
   const [entryMode, setEntryMode] = useState<EntryMode>(initial ? 'unit' : 'total')
   const [movementType, setMovementType] = useState<MovementType>(
     (initial?.movement_type ?? 'buy') as MovementType,
@@ -298,9 +300,9 @@ export function MovementForm({
 
       {entryMode === 'total' && derivedUnitPrice != null ? (
         <p className="muted entry-preview">
-          Precio unitario: {formatMoney(derivedUnitPrice, assetCurrency)}
+          Precio unitario: {money(derivedUnitPrice, assetCurrency)}
           {derivedFees != null && derivedFees > 0
-            ? ` · comisión: ${formatMoney(derivedFees, assetCurrency)}`
+            ? ` · comisión: ${money(derivedFees, assetCurrency)}`
             : null}
           {needsFx ? ` · en ${assetCurrency}` : null}
         </p>
@@ -308,7 +310,7 @@ export function MovementForm({
 
       {entryMode === 'unit' && feesNeedFx && derivedFees != null && derivedFees > 0 ? (
         <p className="muted entry-preview">
-          Comisión: {formatMoney(derivedFees, assetCurrency)}
+          Comisión: {money(derivedFees, assetCurrency)}
         </p>
       ) : null}
 

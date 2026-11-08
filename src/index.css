@@ -143,6 +143,10 @@ h3 {
   margin-bottom: 0.4rem;
 }
 
+.login-card .form-actions {
+  flex-wrap: wrap;
+}
+
 .login-grid {
   margin-top: 1.25rem;
 }
@@ -223,6 +227,129 @@ h3 {
 
 .chart-hint {
   margin: 0 0 1rem;
+}
+
+.spy-panel h2 {
+  margin-bottom: 0.35rem;
+}
+
+.compare-subtitle {
+  margin: 1.35rem 0 0.2rem;
+  font-size: 1rem;
+}
+
+.compare-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.compare-card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.compare-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.compare-card p {
+  margin: 0 0 0.35rem;
+}
+
+.compare-card strong {
+  font-size: 1.2rem;
+}
+
+.compare-table-wrap {
+  overflow: auto;
+  max-height: 28rem;
+  margin-top: 1rem;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 0.5rem 0.65rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.compare-table th:first-child,
+.compare-table td:first-child {
+  text-align: left;
+}
+
+.compare-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.compare-table td {
+  border-top: 1px solid var(--line);
+}
+
+.spy-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 0 0.75rem;
+}
+
+.spy-axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.spy-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0.55rem 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.spy-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.spy-legend .swatch {
+  width: 1.15rem;
+  height: 3px;
+  border-radius: 99px;
+  display: inline-block;
+}
+
+.spy-legend .swatch.aportes {
+  background: var(--muted);
+}
+
+.spy-legend .swatch.spy {
+  background: var(--teal-soft);
+}
+
+.spy-legend .swatch.cartera {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 99px;
+  background: #c4a35a;
 }
 
 .allocation-wrap {
@@ -321,6 +448,23 @@ h3 {
 .allocation-legend strong,
 .allocation-legend .muted {
   display: block;
+}
+
+.quote-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.quote-status p {
+  margin: 0;
+}
+
+.quote-status a {
+  color: inherit;
 }
 
 .controls-bar {
@@ -509,10 +653,38 @@ h3 {
   padding: 0.2rem 0.65rem;
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 [data-theme='light'] .chip {
   color: var(--teal);
+}
+
+.chip-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.chip-live,
+[data-theme='light'] .chip-live {
+  background: var(--teal);
+  color: #fff;
+}
+
+.chip-manual {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.group-leg-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .asset-card-metrics {
@@ -677,6 +849,20 @@ textarea:focus {
   color: var(--teal);
 }
 
+.btn.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+}
+
+.btn.icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .btn.ghost {
   background: transparent;
   color: var(--ink);
@@ -786,9 +972,18 @@ textarea:focus {
 
 .group-legs li {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 0.7fr 1fr;
-  gap: 0.4rem;
+  grid-template-columns: minmax(0, 1.35fr) auto auto auto;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
   font-size: 0.88rem;
+}
+
+.group-legs li > span:not(.group-leg-name) {
+  white-space: nowrap;
+}
+
+.group-legs li > span:last-child {
+  text-align: right;
 }
 
 .venue-tabs {
@@ -879,6 +1074,7 @@ textarea:focus {
   .allocation-chart,
   .calc-inputs,
   .quote-row,
+  .compare-cards,
   .group-legs li {
     grid-template-columns: 1fr;
   }

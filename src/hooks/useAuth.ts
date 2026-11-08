@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { recoveryRequested, supabase } from '../lib/supabase'
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [needsPassword, setNeedsPassword] = useState(recoveryRequested)
 
   useEffect(() => {
     let mounted = true
@@ -15,7 +16,8 @@ export function useAuth() {
       setLoading(false)
     })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setNeedsPassword(true)
       setSession(nextSession)
       setLoading(false)
     })
@@ -36,5 +38,17 @@ export function useAuth() {
     if (error) throw error
   }
 
-  return { session, loading, signIn, signOut }
+  const requestPasswordReset = async (email: string) => {
+    const redirectTo = `${window.location.origin}${window.location.pathname}`
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
+    if (error) throw error
+  }
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
+    setNeedsPassword(false)
+  }
+
+  return { session, loading, needsPassword, signIn, signOut, requestPasswordReset, updatePassword }
 }
